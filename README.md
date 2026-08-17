@@ -1,4 +1,4 @@
-# AutoFuzzer 🚀
+# AutoFuzzer
 
 **AutoFuzzer** is a low-cost, board-to-board robustness testing framework for embedded communication handlers. 
 
@@ -6,7 +6,7 @@ By utilizing an **ESP32** as the fuzzer/health monitor and an **STM32** (e.g., N
 
 ---
 
-## 🛠️ System Architecture
+## System Architecture
 
 ```mermaid
 graph LR
@@ -32,7 +32,7 @@ graph LR
 
 ---
 
-## 🌟 Key Features
+## Key Features
 
 - **Multi-Mutation Fuzzing**: Supports seven distinct packet fuzzing strategies (Valid, Empty, Maximum Payload, Overlength, Bad Checksum, Truncated, and Pseudo-Random).
 - **Hardware Heartbeat Monitor**: Detects target firmware lockups and interrupts within a configurable threshold (default: 350 ms).
@@ -42,7 +42,7 @@ graph LR
 
 ---
 
-## 🔌 Hardware Setup (Milestone 1: UART)
+## Hardware Setup (Milestone 1: UART)
 
 Before powering or flashing either board, make sure the logical signals are connected as follows. **Both boards run at 3.3V logic; do not connect external 5V modules directly to GPIO pins.**
 
@@ -57,7 +57,7 @@ Before powering or flashing either board, make sure the logical signals are conn
 
 ---
 
-## 📊 Communication Protocol & Frame Format
+## Communication Protocol & Frame Format
 
 Every message conforms to the following byte format, defined in [docs/protocol.md](./docs/protocol.md):
 
@@ -85,7 +85,7 @@ When the DUT receives a packet, it replies with:
 
 ---
 
-## 🚀 Quick Start Guide
+## Quick Start Guide
 
 This project is configured using **PlatformIO**.
 
@@ -126,7 +126,7 @@ To reproduce the crash, re-run the fuzzer using the logged **seed** and **sequen
 
 ---
 
-## 📂 Repository Layout
+## Repository Layout
 
 - `firmware/esp32`: PlatformIO project for the ESP32 fuzzer and monitor.
 - `firmware/stm32`: PlatformIO project for the robust STM32 target parser.
@@ -135,7 +135,7 @@ To reproduce the crash, re-run the fuzzer using the logged **seed** and **sequen
 
 ---
 
-## 💡 Future Roadmap (AutoFuzzer-AI)
+## Future Roadmap (AutoFuzzer-AI)
 
 We aim to expand AutoFuzzer into an intelligent testing assistant:
 1. **Adaptive Packet Mutation**: An reinforcement learning loop on the ESP32 to learn which byte flips are most likely to lock up the target.
