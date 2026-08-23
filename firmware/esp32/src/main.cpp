@@ -78,7 +78,6 @@ void updateOledUI() {
   display.setTextSize(1);
   display.setCursor(15, 0);
   display.println("AUTOFUZZER v2.0");
-  display.drawLine(0, 9, 128, 9, SSD1306_WHITE);
 
   // Status Rows
   display.setCursor(0, 13);
