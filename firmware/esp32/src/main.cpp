@@ -89,10 +89,10 @@ void updateOledUI() {
   display.setCursor(0, 35);
   display.printf("Pkts  : %u\n", totalPacketsSent);
 
-  display.setCursor(0, 46);
-  display.printf("DUT   : %s (Crashes:%u)\n", dutAlive ? "ALIVE [OK]" : "CRASHED!", totalCrashes);
+  display.setCursor(0, 44);
+  display.printf("DUT   : %s (C:%u)\n", dutAlive ? "OK" : "FAIL!", totalCrashes);
 
-  display.setCursor(0, 56);
+  display.setCursor(0, 54);
   display.printf("Seed  : 0x%08X", currentSeed);
 
   display.display();
