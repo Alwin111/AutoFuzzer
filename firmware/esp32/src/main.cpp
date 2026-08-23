@@ -1,142 +1,286 @@
 #include <Arduino.h>
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
 
-namespace {
-constexpr uint8_t kSync = 0xA5;
-constexpr uint8_t kCommand = 0x01;
-constexpr uint8_t kAckSync = 0x5A;
-constexpr int kDutRx = 16;
-constexpr int kDutTx = 17;
-constexpr int kHeartbeatPin = 27;
-constexpr uint32_t kBaud = 115200;
-constexpr uint32_t kHeartbeatTimeoutMs = 350;
-constexpr uint32_t kNormalIntervalMs = 150;
-constexpr uint32_t kStressIntervalMs = 15;
+// ==========================================
+// PIN CONFIGURATION
+// ==========================================
+// OLED (I2C)
+constexpr int kOledSda = 21;
+constexpr int kOledScl = 22;
+constexpr int kScreenWidth = 128;
+constexpr int kScreenHeight = 64;
 
-HardwareSerial dutUart(2);
-uint32_t rngState = 0xC0DEC0DE;
-uint16_t sequenceNumber = 0;
-uint32_t lastPacketAt = 0;
-uint32_t lastHeartbeatAt = 0;
-int lastHeartbeatLevel = HIGH;
+// Fuzzer Interface (Hardware Serial 2)
+constexpr int kFuzzerTxPin = 17; // ESP32 TX2 -> STM32 PA10 (RX)
+constexpr int kFuzzerRxPin = 16; // ESP32 RX2 <- STM32 PA9 (TX)
+constexpr int kHeartbeatPin = 27; // Heartbeat input from STM32 PB5
 
-enum class Mutation : uint8_t { Valid, Empty, Maximum, Overlength, BadChecksum, Truncated, Random };
+// Indicators & UI Controls
+constexpr int kPassLedPin = 2;    // Green LED (DUT Heartbeat OK)
+constexpr int kFailLedPin = 4;    // Red LED (DUT Crash / Timeout Alert)
+constexpr int kActiveLedPin = 15; // Yellow LED (Fuzzing Active Indicator)
+constexpr int kBuzzerPin = 32;    // Piezo Alarm Buzzer
 
-uint32_t nextRandom() {
-  rngState ^= rngState << 13;
-  rngState ^= rngState >> 17;
-  rngState ^= rngState << 5;
-  return rngState;
+constexpr int kStartBtnPin = 12;  // Button 1: Start/Pause Fuzzer
+constexpr int kModeBtnPin = 13;   // Button 2: Cycle Mutation Type
+constexpr int kResetBtnPin = 14;  // Button 3: Reset Counters
+
+// ==========================================
+// GLOBAL OBJECTS & STATES
+// ==========================================
+Adafruit_SSD1306 display(kScreenWidth, kScreenHeight, &Wire, -1);
+
+bool isFuzzingRunning = true;
+uint32_t totalPacketsSent = 0;
+uint32_t totalCrashes = 0;
+uint32_t currentSeed = 0xC0DEC0DE;
+uint16_t currentSequence = 0;
+uint32_t lastHeartbeatEdge = 0;
+bool lastHeartbeatState = LOW;
+bool dutAlive = true;
+
+// Mutation Strategies
+enum MutationType {
+  MUTATION_VALID = 0,
+  MUTATION_EMPTY,
+  MUTATION_MAX_PAYLOAD,
+  MUTATION_OVERLENGTH,
+  MUTATION_BAD_CHECKSUM,
+  MUTATION_TRUNCATED,
+  MUTATION_RANDOM,
+  MUTATION_COUNT
+};
+
+const char* mutationNames[] = {
+  "VALID", "EMPTY", "MAX_PAYLOAD", "OVERLENGTH", "BAD_CRC", "TRUNCATED", "RANDOM"
+};
+
+MutationType currentMutation = MUTATION_VALID;
+
+// Deterministic PRNG
+uint32_t xorshift32() {
+  currentSeed ^= (currentSeed << 13);
+  currentSeed ^= (currentSeed >> 17);
+  currentSeed ^= (currentSeed << 5);
+  return currentSeed;
 }
 
-const char *mutationName(Mutation mutation) {
-  switch (mutation) {
-    case Mutation::Valid: return "valid";
-    case Mutation::Empty: return "empty";
-    case Mutation::Maximum: return "maximum";
-    case Mutation::Overlength: return "overlength";
-    case Mutation::BadChecksum: return "bad-checksum";
-    case Mutation::Truncated: return "truncated";
-    case Mutation::Random: return "random";
+// ==========================================
+// OLED UI DISPLAY UPDATE
+// ==========================================
+void updateOledUI() {
+  display.clearDisplay();
+  display.setTextColor(SSD1306_WHITE);
+
+  // Title Header
+  display.setTextSize(1);
+  display.setCursor(15, 0);
+  display.println("AUTOFUZZER v2.0");
+  display.drawLine(0, 9, 128, 9, SSD1306_WHITE);
+
+  // Status Rows
+  display.setCursor(0, 13);
+  display.printf("State : %s\n", isFuzzingRunning ? "RUNNING" : "PAUSED");
+
+  display.setCursor(0, 24);
+  display.printf("Mut   : %s\n", mutationNames[currentMutation]);
+
+  display.setCursor(0, 35);
+  display.printf("Pkts  : %u\n", totalPacketsSent);
+
+  display.setCursor(0, 46);
+  display.printf("DUT   : %s (Crashes:%u)\n", dutAlive ? "ALIVE [OK]" : "CRASHED!", totalCrashes);
+
+  display.drawLine(0, 56, 128, 56, SSD1306_WHITE);
+  display.setCursor(0, 57);
+  display.printf("Seed  : 0x%08X", currentSeed);
+
+  display.display();
+}
+
+// ==========================================
+// PACKET BUILD & TRANSMISSION
+// ==========================================
+void sendFuzzPacket() {
+  if (!isFuzzingRunning) return;
+
+  uint8_t buffer[64];
+  uint8_t payloadLen = 8;
+  uint8_t cmd = 0x01;
+  uint8_t sync = 0xA5;
+
+  switch (currentMutation) {
+    case MUTATION_VALID:
+      payloadLen = 8;
+      break;
+    case MUTATION_EMPTY:
+      payloadLen = 0;
+      break;
+    case MUTATION_MAX_PAYLOAD:
+      payloadLen = 32;
+      break;
+    case MUTATION_OVERLENGTH:
+      payloadLen = 45; // Exceeds 32 max
+      break;
+    case MUTATION_BAD_CHECKSUM:
+      payloadLen = 8;
+      break;
+    case MUTATION_TRUNCATED:
+      payloadLen = 12;
+      break;
+    case MUTATION_RANDOM:
+      payloadLen = (xorshift32() % 32) + 1;
+      break;
+    default:
+      break;
   }
-  return "unknown";
-}
 
-uint8_t checksum(const uint8_t *data, size_t size) {
-  uint8_t value = 0;
-  for (size_t i = 0; i < size; ++i) value ^= data[i];
-  return value;
-}
+  buffer[0] = sync;
+  buffer[1] = cmd;
+  buffer[2] = payloadLen;
+  buffer[3] = currentSequence & 0xFF;
+  buffer[4] = (currentSequence >> 8) & 0xFF;
 
-void printHex(const uint8_t *data, size_t size) {
-  for (size_t i = 0; i < size; ++i) {
-    if (data[i] < 16) Serial.print('0');
-    Serial.print(data[i], HEX);
-    if (i + 1 != size) Serial.print(' ');
-  }
-}
+  uint8_t checksum = cmd ^ payloadLen ^ buffer[3] ^ buffer[4];
 
-void transmitCase(Mutation mutation) {
-  uint8_t frame[40];
-  size_t payloadLength = 4;
-  uint8_t declaredLength = payloadLength;
-  uint8_t command = kCommand;
-
-  if (mutation == Mutation::Empty) payloadLength = declaredLength = 0;
-  if (mutation == Mutation::Maximum) payloadLength = declaredLength = 32;
-  if (mutation == Mutation::Overlength) payloadLength = 4, declaredLength = 36;
-  if (mutation == Mutation::Random) {
-    payloadLength = nextRandom() % 12;
-    declaredLength = payloadLength;
-    command = static_cast<uint8_t>(nextRandom());
+  for (uint8_t i = 0; i < payloadLen; i++) {
+    uint8_t b = xorshift32() & 0xFF;
+    buffer[5 + i] = b;
+    checksum ^= b;
   }
 
-  frame[0] = kSync;
-  frame[1] = command;
-  frame[2] = declaredLength;
-  frame[3] = static_cast<uint8_t>(sequenceNumber);
-  frame[4] = static_cast<uint8_t>(sequenceNumber >> 8);
-  for (size_t i = 0; i < payloadLength; ++i) frame[5 + i] = static_cast<uint8_t>(nextRandom());
-  size_t fullSize = 6 + payloadLength;
-  frame[5 + payloadLength] = checksum(&frame[1], 4 + payloadLength);
-  if (mutation == Mutation::BadChecksum) frame[fullSize - 1] ^= 0xFF;
-  size_t transmittedSize = (mutation == Mutation::Truncated) ? 5 + payloadLength : fullSize;
+  if (currentMutation == MUTATION_BAD_CHECKSUM) {
+    checksum ^= 0xFF; // Invert checksum
+  }
 
-  dutUart.write(frame, transmittedSize);
-  Serial.printf("TX seq=%u type=%s seed=%08lX bytes=", sequenceNumber, mutationName(mutation),
-                static_cast<unsigned long>(rngState));
-  printHex(frame, transmittedSize);
-  Serial.println();
-  ++sequenceNumber;
+  uint8_t totalBytes = 5 + payloadLen;
+  buffer[totalBytes] = checksum;
+  totalBytes += 1;
+
+  if (currentMutation == MUTATION_TRUNCATED) {
+    totalBytes /= 2; // Cut packet in half
+  }
+
+  Serial2.write(buffer, totalBytes);
+  totalPacketsSent++;
+  currentSequence++;
+
+  // Update Yellow Active LED
+  digitalWrite(kActiveLedPin, HIGH);
+  delay(10);
+  digitalWrite(kActiveLedPin, LOW);
 }
 
-void readDutReplies() {
-  static uint8_t reply[4];
-  static size_t position = 0;
-  while (dutUart.available()) {
-    uint8_t byte = static_cast<uint8_t>(dutUart.read());
-    if (position == 0 && byte != kAckSync) continue;
-    reply[position++] = byte;
-    if (position == sizeof(reply)) {
-      uint16_t sequence = reply[1] | (static_cast<uint16_t>(reply[2]) << 8);
-      Serial.printf("DUT seq=%u status=0x%02X\n", sequence, reply[3]);
-      position = 0;
-    }
-  }
-}
-
-void monitorHeartbeat() {
-  int level = digitalRead(kHeartbeatPin);
-  if (level != lastHeartbeatLevel) {
-    lastHeartbeatLevel = level;
-    lastHeartbeatAt = millis();
-  }
-  if (millis() - lastHeartbeatAt > kHeartbeatTimeoutMs) {
-    Serial.printf("FAIL heartbeat-timeout after %lu ms; pause and record last sequence=%u\n",
-                  static_cast<unsigned long>(millis() - lastHeartbeatAt), sequenceNumber - 1);
-    lastHeartbeatAt = millis();  // Rate-limit repeated failure messages.
-  }
-}
-}  // namespace
-
+// ==========================================
+// SETUP & INITIALIZATION
+// ==========================================
 void setup() {
   Serial.begin(115200);
-  pinMode(kHeartbeatPin, INPUT_PULLUP);
-  lastHeartbeatLevel = digitalRead(kHeartbeatPin);
-  lastHeartbeatAt = millis();
-  dutUart.begin(kBaud, SERIAL_8N1, kDutRx, kDutTx);
-  Serial.println("AutoFuzzer ESP32: UART baseline ready");
+  Serial2.begin(115200, SERIAL_8N1, kFuzzerRxPin, kFuzzerTxPin);
+
+  pinMode(kPassLedPin, OUTPUT);
+  pinMode(kFailLedPin, OUTPUT);
+  pinMode(kActiveLedPin, OUTPUT);
+  pinMode(kBuzzerPin, OUTPUT);
+
+  pinMode(kStartBtnPin, INPUT_PULLUP);
+  pinMode(kModeBtnPin, INPUT_PULLUP);
+  pinMode(kResetBtnPin, INPUT_PULLUP);
+  pinMode(kHeartbeatPin, INPUT);
+
+  Wire.begin(kOledSda, kOledScl);
+  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+
+  // Power On Audio/Visual Test
+  digitalWrite(kPassLedPin, HIGH);
+  digitalWrite(kActiveLedPin, HIGH);
+  digitalWrite(kBuzzerPin, HIGH);
+  delay(150);
+  digitalWrite(kBuzzerPin, LOW);
+  digitalWrite(kPassLedPin, LOW);
+  digitalWrite(kActiveLedPin, LOW);
+
+  lastHeartbeatEdge = millis();
+  updateOledUI();
+  Serial.println("--- AUTOFUZZER FIRMWARE V2.0 READY ---");
 }
 
+// ==========================================
+// MAIN LOOP
+// ==========================================
 void loop() {
-  monitorHeartbeat();
-  readDutReplies();
-  const Mutation testPlan[] = {Mutation::Valid, Mutation::Empty, Mutation::Maximum,
-                               Mutation::Overlength, Mutation::BadChecksum,
-                               Mutation::Truncated, Mutation::Random};
-  uint32_t interval = kNormalIntervalMs;
-  if (millis() - lastPacketAt >= interval) {
-    transmitCase(testPlan[sequenceNumber % (sizeof(testPlan) / sizeof(testPlan[0]))]);
-    lastPacketAt = millis();
+  static uint32_t lastPacketTime = 0;
+  static uint32_t lastUiTime = 0;
+  static uint32_t lastBtnCheck = 0;
+
+  // 1. Monitor Heartbeat from Target (DUT)
+  bool hbCurrent = digitalRead(kHeartbeatPin);
+  if (hbCurrent != lastHeartbeatState) {
+    lastHeartbeatState = hbCurrent;
+    lastHeartbeatEdge = millis();
+  }
+
+  if (millis() - lastHeartbeatEdge > 350) {
+    if (dutAlive) {
+      dutAlive = false;
+      totalCrashes++;
+      digitalWrite(kPassLedPin, LOW);
+      digitalWrite(kFailLedPin, HIGH);
+      digitalWrite(kBuzzerPin, HIGH); // Alarm on crash
+      delay(200);
+      digitalWrite(kBuzzerPin, LOW);
+      Serial.printf("ALERT: DUT Heartbeat Timeout! Crash #%u\n", totalCrashes);
+      updateOledUI();
+    }
+  } else {
+    if (!dutAlive) {
+      dutAlive = true;
+      digitalWrite(kFailLedPin, LOW);
+      digitalWrite(kPassLedPin, HIGH);
+      updateOledUI();
+    } else {
+      digitalWrite(kPassLedPin, HIGH);
+    }
+  }
+
+  // 2. Handle User Button Controls
+  if (millis() - lastBtnCheck > 150) {
+    if (digitalRead(kStartBtnPin) == LOW) {
+      lastBtnCheck = millis();
+      isFuzzingRunning = !isFuzzingRunning;
+      Serial.printf("Button 1: Fuzzing %s\n", isFuzzingRunning ? "STARTED" : "PAUSED");
+      updateOledUI();
+    }
+
+    if (digitalRead(kModeBtnPin) == LOW) {
+      lastBtnCheck = millis();
+      currentMutation = (MutationType)((currentMutation + 1) % MUTATION_COUNT);
+      Serial.printf("Button 2: Switched Mutation -> %s\n", mutationNames[currentMutation]);
+      updateOledUI();
+    }
+
+    if (digitalRead(kResetBtnPin) == LOW) {
+      lastBtnCheck = millis();
+      totalPacketsSent = 0;
+      totalCrashes = 0;
+      currentSequence = 0;
+      currentSeed = 0xC0DEC0DE;
+      Serial.println("Button 3: Counters & PRNG Reset!");
+      updateOledUI();
+    }
+  }
+
+  // 3. Packet Fuzzing Interval
+  if (isFuzzingRunning && (millis() - lastPacketTime > 100)) {
+    lastPacketTime = millis();
+    sendFuzzPacket();
+  }
+
+  // 4. Regular OLED Refresh
+  if (millis() - lastUiTime > 500) {
+    lastUiTime = millis();
+    updateOledUI();
   }
 }
-
