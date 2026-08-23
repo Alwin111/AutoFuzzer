@@ -93,8 +93,7 @@ void updateOledUI() {
   display.setCursor(0, 46);
   display.printf("DUT   : %s (Crashes:%u)\n", dutAlive ? "ALIVE [OK]" : "CRASHED!", totalCrashes);
 
-  display.drawLine(0, 56, 128, 56, SSD1306_WHITE);
-  display.setCursor(0, 57);
+  display.setCursor(0, 56);
   display.printf("Seed  : 0x%08X", currentSeed);
 
   display.display();
