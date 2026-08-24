@@ -25,10 +25,31 @@ constexpr int kSpiMosi = 23;
 constexpr int kSpiCs = 5;
 
 // Indicators & UI Controls
-constexpr int kPassLedPin = 2;    // Green LED (Target Healthy)
-constexpr int kFailLedPin = 4;    // Red LED (Target Crash Alert)
-constexpr int kActiveLedPin = 15; // Yellow LED (Transmission Active)
-constexpr int kBuzzerPin = 32;    // Piezo Alarm Buzzer
+constexpr int kPassLedPin   = 2;   // Green LED (Target Healthy)
+constexpr int kFailLedPin   = 4;   // Red LED (Target Crash Alert)
+constexpr int kActiveLedPin = 15;  // Yellow LED (Transmission Active)
+constexpr int kBuzzerPin    = 32;  // Piezo Alarm Buzzer
+
+// ==========================================
+// PWM CHANNEL CONFIGURATION
+// 50% brightness for LEDs, 50% duty for buzzer
+// ==========================================
+constexpr int kLedPwmFreq    = 5000;  // 5 kHz LED PWM
+constexpr int kLedPwmRes     = 8;     // 8-bit resolution (0-255)
+constexpr int kBuzzerPwmFreq = 2000;  // 2 kHz audible tone
+constexpr int kBuzzerPwmRes  = 8;
+
+// LEDC channels (0-15 available on ESP32)
+constexpr int kPassLedCh   = 0;
+constexpr int kFailLedCh   = 1;
+constexpr int kActiveLedCh = 2;
+constexpr int kBuzzerCh    = 3;
+
+// Duty constants: 127/255 = ~50%
+constexpr uint32_t kLedOn    = 127;
+constexpr uint32_t kLedOff   = 0;
+constexpr uint32_t kBuzzerOn = 127;
+constexpr uint32_t kBuzzerOff = 0;
 
 constexpr int kStartBtnPin = 12;  // Button 1: Start/Pause Fuzzer
 constexpr int kModeBtnPin = 13;   // Button 2: Cycle Protocol/Mutation Mode
@@ -84,6 +105,20 @@ ModeType currentMode = MODE_UART_VALID;
 uint32_t aiMutationCrashWeights[7] = {1, 1, 2, 5, 5, 4, 3};
 uint32_t aiTotalWeight = 21;
 uint8_t lastAiMutation = 0;
+
+// ==========================================
+// PWM HELPERS
+// ==========================================
+inline void ledOn(int ch)  { ledcWrite(ch, kLedOn); }
+inline void ledOff(int ch) { ledcWrite(ch, kLedOff); }
+inline void buzzerOn()     { ledcWrite(kBuzzerCh, kBuzzerOn); }
+inline void buzzerOff()    { ledcWrite(kBuzzerCh, kBuzzerOff); }
+
+void alertBeep(uint32_t durationMs) {
+  buzzerOn();
+  delay(durationMs);
+  buzzerOff();
+}
 
 // Deterministic PRNG
 uint32_t xorshift32() {
@@ -236,7 +271,7 @@ void sendI2cFuzzPacket() {
 void executeFuzzingCycle() {
   if (!isFuzzingRunning) return;
 
-  digitalWrite(kActiveLedPin, HIGH);
+  ledOn(kActiveLedCh);
 
   switch (currentMode) {
     case MODE_UART_VALID: sendUartFuzzPacket(0); break;
@@ -253,7 +288,7 @@ void executeFuzzingCycle() {
   }
 
   delay(5);
-  digitalWrite(kActiveLedPin, LOW);
+  ledOff(kActiveLedCh);
 }
 
 // ==========================================
@@ -269,10 +304,17 @@ void setup() {
   digitalWrite(kSpiCs, HIGH);
   SPI.begin(kSpiSck, kSpiMiso, kSpiMosi, kSpiCs);
 
-  pinMode(kPassLedPin, OUTPUT);
-  pinMode(kFailLedPin, OUTPUT);
-  pinMode(kActiveLedPin, OUTPUT);
-  pinMode(kBuzzerPin, OUTPUT);
+  // ---- PWM Setup: LEDs ----
+  ledcSetup(kPassLedCh,   kLedPwmFreq, kLedPwmRes);
+  ledcSetup(kFailLedCh,   kLedPwmFreq, kLedPwmRes);
+  ledcSetup(kActiveLedCh, kLedPwmFreq, kLedPwmRes);
+  ledcAttachPin(kPassLedPin,   kPassLedCh);
+  ledcAttachPin(kFailLedPin,   kFailLedCh);
+  ledcAttachPin(kActiveLedPin, kActiveLedCh);
+
+  // ---- PWM Setup: Buzzer ----
+  ledcSetup(kBuzzerCh, kBuzzerPwmFreq, kBuzzerPwmRes);
+  ledcAttachPin(kBuzzerPin, kBuzzerCh);
 
   pinMode(kStartBtnPin, INPUT_PULLUP);
   pinMode(kModeBtnPin, INPUT_PULLUP);
@@ -282,14 +324,12 @@ void setup() {
   Wire.begin(kOledSda, kOledScl);
   display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
 
-  // Audio/Visual Self-Test
-  digitalWrite(kPassLedPin, HIGH);
-  digitalWrite(kActiveLedPin, HIGH);
-  digitalWrite(kBuzzerPin, HIGH);
-  delay(150);
-  digitalWrite(kBuzzerPin, LOW);
-  digitalWrite(kPassLedPin, LOW);
-  digitalWrite(kActiveLedPin, LOW);
+  // Audio/Visual Self-Test (half brightness / half volume)
+  ledOn(kPassLedCh);
+  ledOn(kActiveLedCh);
+  alertBeep(150);
+  ledOff(kPassLedCh);
+  ledOff(kActiveLedCh);
 
   lastHeartbeatEdge = millis();
   updateOledUI();
@@ -316,22 +356,20 @@ void loop() {
       dutAlive = false;
       totalCrashes++;
       recordAiCrashReward(); // AI Learning Loop Reward
-      digitalWrite(kPassLedPin, LOW);
-      digitalWrite(kFailLedPin, HIGH);
-      digitalWrite(kBuzzerPin, HIGH);
-      delay(200);
-      digitalWrite(kBuzzerPin, LOW);
+      ledOff(kPassLedCh);
+      ledOn(kFailLedCh);
+      alertBeep(200);   // 200 ms PWM beep at 50% duty
       Serial.printf("ALERT: Target Heartbeat Timeout! Crash #%u\n", totalCrashes);
       updateOledUI();
     }
   } else {
     if (!dutAlive) {
       dutAlive = true;
-      digitalWrite(kFailLedPin, LOW);
-      digitalWrite(kPassLedPin, HIGH);
+      ledOff(kFailLedCh);
+      ledOn(kPassLedCh);
       updateOledUI();
     } else {
-      digitalWrite(kPassLedPin, HIGH);
+      ledOn(kPassLedCh);
     }
   }
 

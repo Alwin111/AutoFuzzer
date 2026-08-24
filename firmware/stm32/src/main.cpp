@@ -49,6 +49,7 @@ void consumeByte(uint8_t byte) {
       lengthByte = byte;
       runningChecksum = xorByte(runningChecksum, byte);
       if (lengthByte > kMaxPayload) {
+        Serial.print("DUT: Overlength payload length="); Serial.println(lengthByte);
         sendReply(0x02);
         resetParser();
       } else {
@@ -72,7 +73,13 @@ void consumeByte(uint8_t byte) {
       if (payloadPosition == lengthByte) state = ParserState::Checksum;
       break;
     case ParserState::Checksum:
-      sendReply(byte == runningChecksum ? 0x00 : 0x03);
+      if (byte == runningChecksum) {
+        Serial.print("DUT: Packet OK seq="); Serial.println(sequenceNumber);
+        sendReply(0x00);
+      } else {
+        Serial.print("DUT: Bad Checksum seq="); Serial.println(sequenceNumber);
+        sendReply(0x03);
+      }
       resetParser();
       break;
   }
