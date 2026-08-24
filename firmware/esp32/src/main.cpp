@@ -14,9 +14,9 @@ constexpr int kScreenWidth = 128;
 constexpr int kScreenHeight = 64;
 
 // Fuzzer UART (Hardware Serial 2)
-constexpr int kFuzzerTxPin = 17; // ESP32 TX2 -> Target RX
-constexpr int kFuzzerRxPin = 16; // ESP32 RX2 <- Target TX
-constexpr int kHeartbeatPin = 27; // Heartbeat input from Target
+constexpr int kFuzzerTxPin  = 17; // ESP32 TX2 -> Target RX
+constexpr int kFuzzerRxPin  = 16; // ESP32 RX2 <- Target TX
+constexpr int kHeartbeatPin = 26; // Heartbeat input from Target (STM32 PB5)
 
 // SPI Fuzzer Pins
 constexpr int kSpiSck = 18;
@@ -27,7 +27,7 @@ constexpr int kSpiCs = 5;
 // Indicators & UI Controls
 constexpr int kPassLedPin   = 2;   // Green LED (Target Healthy)
 constexpr int kFailLedPin   = 4;   // Red LED (Target Crash Alert)
-constexpr int kActiveLedPin = 15;  // Yellow LED (Transmission Active)
+constexpr int kActiveLedPin = 15;  // Blue LED (Transmission Active)
 constexpr int kBuzzerPin    = 32;  // Piezo Alarm Buzzer
 
 // ==========================================
@@ -52,8 +52,9 @@ constexpr uint32_t kBuzzerOn = 127;
 constexpr uint32_t kBuzzerOff = 0;
 
 constexpr int kStartBtnPin = 12;  // Button 1: Start/Pause Fuzzer
-constexpr int kModeBtnPin = 13;   // Button 2: Cycle Protocol/Mutation Mode
+constexpr int kModeBtnPin  = 13;  // Button 2: Cycle Protocol/Mutation Mode
 constexpr int kResetBtnPin = 14;  // Button 3: Reset Stats & AI Weights
+constexpr int kOledBtnPin  = 27;  // Button 4: Toggle OLED On/Off
 
 // ==========================================
 // PROTOCOL & MUTATION MODES
@@ -97,7 +98,8 @@ uint32_t currentSeed = 0xC0DEC0DE;
 uint16_t currentSequence = 0;
 uint32_t lastHeartbeatEdge = 0;
 bool lastHeartbeatState = LOW;
-bool dutAlive = true;
+bool dutAlive  = true;
+bool oledOn    = true;  // OLED display state (Button 4 toggles)
 
 ModeType currentMode = MODE_UART_VALID;
 
@@ -316,9 +318,10 @@ void setup() {
   ledcSetup(kBuzzerCh, kBuzzerPwmFreq, kBuzzerPwmRes);
   ledcAttachPin(kBuzzerPin, kBuzzerCh);
 
-  pinMode(kStartBtnPin, INPUT_PULLUP);
-  pinMode(kModeBtnPin, INPUT_PULLUP);
-  pinMode(kResetBtnPin, INPUT_PULLUP);
+  pinMode(kStartBtnPin,  INPUT_PULLUP);
+  pinMode(kModeBtnPin,   INPUT_PULLUP);
+  pinMode(kResetBtnPin,  INPUT_PULLUP);
+  pinMode(kOledBtnPin,   INPUT_PULLUP);
   pinMode(kHeartbeatPin, INPUT);
 
   Wire.begin(kOledSda, kOledScl);
@@ -399,6 +402,19 @@ void loop() {
       aiTotalWeight = 7;
       Serial.println("Btn 3: Reset Stats & AI Weights!");
       updateOledUI();
+    }
+
+    if (digitalRead(kOledBtnPin) == LOW) {
+      lastBtnCheck = millis();
+      oledOn = !oledOn;
+      if (oledOn) {
+        display.ssd1306_command(SSD1306_DISPLAYON);
+        updateOledUI();
+        Serial.println("Btn 4: OLED ON");
+      } else {
+        display.ssd1306_command(SSD1306_DISPLAYOFF);
+        Serial.println("Btn 4: OLED OFF");
+      }
     }
   }
 
