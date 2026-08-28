@@ -94,7 +94,7 @@ The Logic Analyzer Header splits fuzzer signals in parallel before they reach th
 | **Pin 5** | Target SCK (SPI Clock) | GPIO 18 | **Pin 6** |
 | **Pin 6** | Target MISO (SPI Input) | GPIO 19 | **Pin 7** |
 | **Pin 7** | Target MOSI (SPI Output) | GPIO 23 | **Pin 8** |
-| **Pin 8** | Heartbeat (Target Alive Input) | GPIO 33 | **Pin 12** |
+| **Pin 8** | Heartbeat (Target Alive Input) | GPIO 25 | **Pin 12** |
 
 ---
 

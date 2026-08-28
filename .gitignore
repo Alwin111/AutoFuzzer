@@ -1,0 +1,47 @@
+# PlatformIO build artifacts
+**/.pio/
+**/.pioenvs/
+**/.piolibdeps/
+
+# Build output
+build/
+*.o
+*.elf
+*.bin
+*.map
+*.a
+*.d
+*.su
+*.exe
+*.out
+
+# VS Code
+.vscode/
+!.vscode/c_cpp_properties.json
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs_Store
+desktop.ini
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+.env
+
+# Freebuff
+.freebuff/
+
+# Temp files
+*.tmp
+*.bak
+testing commands.txt*

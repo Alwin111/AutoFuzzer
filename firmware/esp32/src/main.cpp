@@ -1,432 +1,890 @@
+// ============================================
+// AutoFuzzer v4.0 — Main Controller
+//
+// Standalone embedded protocol robustness
+// testing platform.
+//
+// Workflow:
+//   SELECT PROTOCOL → SELECT TEST → PROTOCOL CHECK
+//   → RUN CAMPAIGN → DETECT FAILURE → INVESTIGATE
+//   → REPLAY → MINIMIZE → REPORT → RESULT
+//
+// All operations are non-blocking.
+// The ESP32 runs autonomously without a PC.
+// ============================================
+
 #include <Arduino.h>
 #include <Wire.h>
 #include <SPI.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
 
-// ==========================================
-// PIN CONFIGURATION
-// ==========================================
-// OLED (I2C)
-constexpr int kOledSda = 21;
-constexpr int kOledScl = 22;
-constexpr int kScreenWidth = 128;
-constexpr int kScreenHeight = 64;
+// Core
+#include "core/types.h"
+#include "core/prng.h"
+#include "core/campaign.h"
+#include "core/testcase.h"
+#include "core/failure.h"
+#include "core/result.h"
 
-// Fuzzer UART (Hardware Serial 2)
-constexpr int kFuzzerTxPin  = 17; // ESP32 TX2 -> Target RX
-constexpr int kFuzzerRxPin  = 16; // ESP32 RX2 <- Target TX
-constexpr int kHeartbeatPin = 26; // Heartbeat input from Target (STM32 PB5)
+// Protocols
+#include "protocols/uart_fuzzer.h"
+#include "protocols/uart_parser.h"
+#include "protocols/spi_fuzzer.h"
+#include "protocols/i2c_fuzzer.h"
 
-// SPI Fuzzer Pins
-constexpr int kSpiSck = 18;
-constexpr int kSpiMiso = 19;
-constexpr int kSpiMosi = 23;
-constexpr int kSpiCs = 5;
+// Monitoring
+#include "monitoring/heartbeat.h"
+#include "monitoring/crash_detector.h"
 
-// Indicators & UI Controls
-constexpr int kPassLedPin   = 2;   // Green LED (Target Healthy)
-constexpr int kFailLedPin   = 4;   // Red LED (Target Crash Alert)
-constexpr int kActiveLedPin = 15;  // Blue LED (Transmission Active)
-constexpr int kBuzzerPin    = 32;  // Piezo Alarm Buzzer
+// UI
+#include "ui/oled_ui.h"
+#include "ui/buttons.h"
+#include "ui/indicators.h"
 
-// ==========================================
-// PWM CHANNEL CONFIGURATION
-// 50% brightness for LEDs, 50% duty for buzzer
-// ==========================================
-constexpr int kLedPwmFreq    = 5000;  // 5 kHz LED PWM
-constexpr int kLedPwmRes     = 8;     // 8-bit resolution (0-255)
-constexpr int kBuzzerPwmFreq = 2000;  // 2 kHz audible tone
-constexpr int kBuzzerPwmRes  = 8;
+// Storage
+#include "storage/failure_store.h"
 
-// LEDC channels (0-15 available on ESP32)
-constexpr int kPassLedCh   = 0;
-constexpr int kFailLedCh   = 1;
-constexpr int kActiveLedCh = 2;
-constexpr int kBuzzerCh    = 3;
-
-// Duty constants: 127/255 = ~50%
-constexpr uint32_t kLedOn    = 127;
-constexpr uint32_t kLedOff   = 0;
-constexpr uint32_t kBuzzerOn = 127;
-constexpr uint32_t kBuzzerOff = 0;
-
-constexpr int kStartBtnPin = 12;  // Button 1: Start/Pause Fuzzer
-constexpr int kModeBtnPin  = 13;  // Button 2: Cycle Protocol/Mutation Mode
-constexpr int kResetBtnPin = 14;  // Button 3: Reset Stats & AI Weights
-constexpr int kOledBtnPin  = 27;  // Button 4: Toggle OLED On/Off
-
-// ==========================================
-// PROTOCOL & MUTATION MODES
-// ==========================================
-enum ModeType {
-  MODE_UART_VALID = 0,
-  MODE_UART_EMPTY,
-  MODE_UART_MAX,
-  MODE_UART_OVERLENGTH,
-  MODE_UART_BAD_CRC,
-  MODE_UART_TRUNCATED,
-  MODE_UART_RANDOM,
-  MODE_SPI_FUZZ,
-  MODE_I2C_FUZZ,
-  MODE_AI_ADAPTIVE,
-  MODE_COUNT
+// ============================================
+// App State
+// ============================================
+enum AppState : uint8_t {
+  APP_MENU,
+  APP_PROTOCOL_CHECK,
+  APP_FUZZING,
+  APP_FAILURE_MENU,
+  APP_REPLAYING,
+  APP_MINIMIZING,
+  APP_RESULT,
+  APP_SERIAL_CMD
 };
 
-const char* modeNames[] = {
-  "UART: VALID",
-  "UART: EMPTY",
-  "UART: MAX_LEN",
-  "UART: OVERLEN",
-  "UART: BAD_CRC",
-  "UART: TRUNC",
-  "UART: RANDOM",
-  "SPI: FUZZ",
-  "I2C: SCAN_FUZZ",
-  "AI: ADAPTIVE"
-};
+static AppState s_appState = APP_MENU;
 
-// ==========================================
-// GLOBAL OBJECTS & STATE
-// ==========================================
-Adafruit_SSD1306 display(kScreenWidth, kScreenHeight, &Wire, -1);
+// Menu navigation state
+static TargetBoard  s_selectedBoard   = BOARD_STM32;
+static ProtocolMode s_selectedProtocol = PROTO_UART;
+static TestProfile  s_selectedProfile  = TEST_QUICK;
+static uint32_t     s_customDurationMs = 30000;
 
-bool isFuzzingRunning = true;
-uint32_t totalPacketsSent = 0;
-uint32_t totalCrashes = 0;
-uint32_t currentSeed = 0xC0DEC0DE;
-uint16_t currentSequence = 0;
-uint32_t lastHeartbeatEdge = 0;
-bool lastHeartbeatState = LOW;
-bool dutAlive  = true;
-bool oledOn    = true;  // OLED display state (Button 4 toggles)
+// Replay state
+static uint8_t  s_replayAttempts = 0;
+static uint8_t  s_replayMaxAttempts = 3;
+static uint8_t  s_replayFails = 0;
+static bool     s_replayRunning = false;
 
-ModeType currentMode = MODE_UART_VALID;
+// Minimizer state
+static uint32_t s_minimCurrentLen = 0;
+static uint32_t s_minimBestLen = 0;
+static bool     s_minimRunning = false;
 
-// AI Reinforcement Learning Crash Weights (for adaptive mutation)
-uint32_t aiMutationCrashWeights[7] = {1, 1, 2, 5, 5, 4, 3};
-uint32_t aiTotalWeight = 21;
-uint8_t lastAiMutation = 0;
+// Serial command buffer
+static char s_serialBuf[128];
+static uint8_t s_serialBufIdx = 0;
 
-// ==========================================
-// PWM HELPERS
-// ==========================================
-inline void ledOn(int ch)  { ledcWrite(ch, kLedOn); }
-inline void ledOff(int ch) { ledcWrite(ch, kLedOff); }
-inline void buzzerOn()     { ledcWrite(kBuzzerCh, kBuzzerOn); }
-inline void buzzerOff()    { ledcWrite(kBuzzerCh, kBuzzerOff); }
+// ============================================
+// Forward Declarations
+// ============================================
+static void handle_menu_input(ButtonAction btn);
+static void handle_protocol_check_input(ButtonAction btn);
+static void handle_failure_menu_input(ButtonAction btn);
+static void handle_result_input(ButtonAction btn);
+static void start_campaign(void);
+static void run_fuzzing_cycle(void);
+static void start_replay(void);
+static void update_replay(void);
+static void start_minimize(void);
+static void update_minimize(void);
+static void process_serial_commands(void);
 
-void alertBeep(uint32_t durationMs) {
-  buzzerOn();
-  delay(durationMs);
-  buzzerOff();
-}
-
-// Deterministic PRNG
-uint32_t xorshift32() {
-  currentSeed ^= (currentSeed << 13);
-  currentSeed ^= (currentSeed >> 17);
-  currentSeed ^= (currentSeed << 5);
-  return currentSeed;
-}
-
-// ==========================================
-// OLED UI DISPLAY
-// ==========================================
-void updateOledUI() {
-  display.clearDisplay();
-  display.setTextColor(SSD1306_WHITE);
-
-  // Title Header
-  display.setTextSize(1);
-  display.setCursor(12, 0);
-  display.println("AUTOFUZZER v3.0");
-
-  // Status Rows
-  display.setCursor(0, 13);
-  display.printf("State : %s\n", isFuzzingRunning ? "RUNNING" : "PAUSED");
-
-  display.setCursor(0, 24);
-  display.printf("Mode  : %s\n", modeNames[currentMode]);
-
-  display.setCursor(0, 35);
-  display.printf("Pkts  : %u\n", totalPacketsSent);
-
-  display.setCursor(0, 44);
-  display.printf("DUT   : %s (C:%u)\n", dutAlive ? "OK" : "FAIL!", totalCrashes);
-
-  display.setCursor(0, 54);
-  display.printf("Seed  : 0x%08X", currentSeed);
-
-  display.display();
-}
-
-// ==========================================
-// AI REINFORCEMENT LEARNING ENGINE
-// ==========================================
-uint8_t selectAiMutation() {
-  uint32_t roll = xorshift32() % aiTotalWeight;
-  uint32_t cumulative = 0;
-  for (uint8_t i = 0; i < 7; i++) {
-    cumulative += aiMutationCrashWeights[i];
-    if (roll < cumulative) {
-      lastAiMutation = i;
-      return i;
-    }
-  }
-  return 6; // Default to random
-}
-
-void recordAiCrashReward() {
-  // Reward the mutation strategy that successfully caused a crash
-  if (currentMode == MODE_AI_ADAPTIVE) {
-    aiMutationCrashWeights[lastAiMutation] += 3;
-    aiTotalWeight += 3;
-    Serial.printf("AI RL: Rewarded mutation index %u (New Weight: %u)\n", 
-                  lastAiMutation, aiMutationCrashWeights[lastAiMutation]);
-  }
-}
-
-// ==========================================
-// UART FUZZER DRIVER
-// ==========================================
-void sendUartFuzzPacket(uint8_t mutationIdx) {
-  uint8_t buffer[64];
-  uint8_t payloadLen = 8;
-  uint8_t cmd = 0x01;
-  uint8_t sync = 0xA5;
-
-  switch (mutationIdx) {
-    case 0: payloadLen = 8; break;                   // Valid
-    case 1: payloadLen = 0; break;                   // Empty
-    case 2: payloadLen = 32; break;                  // Max
-    case 3: payloadLen = 45; break;                  // Overlength
-    case 4: payloadLen = 8; break;                   // Bad CRC
-    case 5: payloadLen = 12; break;                  // Truncated
-    case 6: payloadLen = (xorshift32() % 32) + 1; break; // Random
-  }
-
-  buffer[0] = sync;
-  buffer[1] = cmd;
-  buffer[2] = payloadLen;
-  buffer[3] = currentSequence & 0xFF;
-  buffer[4] = (currentSequence >> 8) & 0xFF;
-
-  uint8_t checksum = cmd ^ payloadLen ^ buffer[3] ^ buffer[4];
-
-  for (uint8_t i = 0; i < payloadLen; i++) {
-    uint8_t b = xorshift32() & 0xFF;
-    buffer[5 + i] = b;
-    checksum ^= b;
-  }
-
-  if (mutationIdx == 4) checksum ^= 0xFF; // Invert CRC
-
-  uint8_t totalBytes = 5 + payloadLen;
-  buffer[totalBytes] = checksum;
-  totalBytes += 1;
-
-  if (mutationIdx == 5) totalBytes /= 2; // Cut truncated packet
-
-  Serial2.write(buffer, totalBytes);
-  totalPacketsSent++;
-  currentSequence++;
-}
-
-// ==========================================
-// SPI FUZZER DRIVER
-// ==========================================
-void sendSpiFuzzPacket() {
-  digitalWrite(kSpiCs, LOW);
-  delayMicroseconds(10);
-  
-  uint8_t spiLen = (xorshift32() % 16) + 4;
-  for (uint8_t i = 0; i < spiLen; i++) {
-    SPI.transfer((uint8_t)(xorshift32() & 0xFF));
-  }
-  
-  delayMicroseconds(10);
-  digitalWrite(kSpiCs, HIGH);
-  totalPacketsSent++;
-}
-
-// ==========================================
-// I2C BUS FUZZER DRIVER
-// ==========================================
-void sendI2cFuzzPacket() {
-  uint8_t targetAddr = (xorshift32() % 112) + 8; // Valid 7-bit I2C range
-  Wire.beginTransmission(targetAddr);
-  
-  uint8_t regAddr = (uint8_t)(xorshift32() & 0xFF);
-  Wire.write(regAddr);
-  
-  uint8_t dataVal = (uint8_t)(xorshift32() & 0xFF);
-  Wire.write(dataVal);
-  
-  Wire.endTransmission();
-  totalPacketsSent++;
-}
-
-// ==========================================
-// DISPATCH FUZZING TASK
-// ==========================================
-void executeFuzzingCycle() {
-  if (!isFuzzingRunning) return;
-
-  ledOn(kActiveLedCh);
-
-  switch (currentMode) {
-    case MODE_UART_VALID: sendUartFuzzPacket(0); break;
-    case MODE_UART_EMPTY: sendUartFuzzPacket(1); break;
-    case MODE_UART_MAX: sendUartFuzzPacket(2); break;
-    case MODE_UART_OVERLENGTH: sendUartFuzzPacket(3); break;
-    case MODE_UART_BAD_CRC: sendUartFuzzPacket(4); break;
-    case MODE_UART_TRUNCATED: sendUartFuzzPacket(5); break;
-    case MODE_UART_RANDOM: sendUartFuzzPacket(6); break;
-    case MODE_SPI_FUZZ: sendSpiFuzzPacket(); break;
-    case MODE_I2C_FUZZ: sendI2cFuzzPacket(); break;
-    case MODE_AI_ADAPTIVE: sendUartFuzzPacket(selectAiMutation()); break;
-    default: break;
-  }
-
-  delay(5);
-  ledOff(kActiveLedCh);
-}
-
-// ==========================================
-// SETUP & HARDWARE INITIALIZATION
-// ==========================================
+// ============================================
+// Setup
+// ============================================
 void setup() {
   Serial.begin(115200);
+  delay(100);
+  Serial.println("\n========================================");
+  Serial.printf("  AutoFuzzer v%s — Embedded Fuzzing Platform\n", AUTOFUZZER_VERSION);
+  Serial.println("========================================\n");
 
-  // Initialize Peripheral Interfaces
-  Serial2.begin(115200, SERIAL_8N1, kFuzzerRxPin, kFuzzerTxPin);
-  
-  pinMode(kSpiCs, OUTPUT);
-  digitalWrite(kSpiCs, HIGH);
-  SPI.begin(kSpiSck, kSpiMiso, kSpiMosi, kSpiCs);
+  // Initialize all modules
+  buttons_init();
+  indicators_init();
+  oled_ui_init();
+  prng_init(0xC0DEC0DE);
+  campaign_init();
+  uart_fuzzer_init();
+  uart_parser_init();
+  heartbeat_init();
+  crash_detector_init();
+  failure_init();
+  failure_store_init();
 
-  // ---- PWM Setup: LEDs ----
-  ledcSetup(kPassLedCh,   kLedPwmFreq, kLedPwmRes);
-  ledcSetup(kFailLedCh,   kLedPwmFreq, kLedPwmRes);
-  ledcSetup(kActiveLedCh, kLedPwmFreq, kLedPwmRes);
-  ledcAttachPin(kPassLedPin,   kPassLedCh);
-  ledcAttachPin(kFailLedPin,   kFailLedCh);
-  ledcAttachPin(kActiveLedPin, kActiveLedCh);
+  // Self-test: brief visual/audio confirmation
+  indicators_self_test();
 
-  // ---- PWM Setup: Buzzer ----
-  ledcSetup(kBuzzerCh, kBuzzerPwmFreq, kBuzzerPwmRes);
-  ledcAttachPin(kBuzzerPin, kBuzzerCh);
+  // Show main menu
+  oled_ui_set_screen(SCREEN_MAIN_MENU);
+  s_appState = APP_MENU;
 
-  pinMode(kStartBtnPin,  INPUT_PULLUP);
-  pinMode(kModeBtnPin,   INPUT_PULLUP);
-  pinMode(kResetBtnPin,  INPUT_PULLUP);
-  pinMode(kOledBtnPin,   INPUT_PULLUP);
-  pinMode(kHeartbeatPin, INPUT);
-
-  Wire.begin(kOledSda, kOledScl);
-  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
-
-  // Audio/Visual Self-Test (half brightness / half volume)
-  ledOn(kPassLedCh);
-  ledOn(kActiveLedCh);
-  alertBeep(150);
-  ledOff(kPassLedCh);
-  ledOff(kActiveLedCh);
-
-  lastHeartbeatEdge = millis();
-  updateOledUI();
-  Serial.println("--- AUTOFUZZER V3.0 COMPLETE FIRMWARE READY ---");
+  Serial.println("READY — Awaiting user input via buttons or serial commands.");
+  Serial.println("Commands: START, STOP, PAUSE, STATUS, EXPORT, REPLAY, RESET\n");
 }
 
-// ==========================================
-// MAIN LOOP
-// ==========================================
+// ============================================
+// Main Loop
+// ============================================
 void loop() {
-  static uint32_t lastPacketTime = 0;
-  static uint32_t lastUiTime = 0;
-  static uint32_t lastBtnCheck = 0;
+  // 1. Read buttons (non-blocking)
+  ButtonAction btn = buttons_update();
 
-  // 1. Monitor Target Heartbeat
-  bool hbCurrent = digitalRead(kHeartbeatPin);
-  if (hbCurrent != lastHeartbeatState) {
-    lastHeartbeatState = hbCurrent;
-    lastHeartbeatEdge = millis();
-  }
+  // 2. Read serial commands
+  process_serial_commands();
 
-  if (millis() - lastHeartbeatEdge > 350) {
-    if (dutAlive) {
-      dutAlive = false;
-      totalCrashes++;
-      recordAiCrashReward(); // AI Learning Loop Reward
-      ledOff(kPassLedCh);
-      ledOn(kFailLedCh);
-      alertBeep(200);   // 200 ms PWM beep at 50% duty
-      Serial.printf("ALERT: Target Heartbeat Timeout! Crash #%u\n", totalCrashes);
-      updateOledUI();
-    }
-  } else {
-    if (!dutAlive) {
-      dutAlive = true;
-      ledOff(kFailLedCh);
-      ledOn(kPassLedCh);
-      updateOledUI();
-    } else {
-      ledOn(kPassLedCh);
-    }
-  }
+  // 3. Update non-blocking indicators
+  indicators_update();
 
-  // 2. Button Controls
-  if (millis() - lastBtnCheck > 150) {
-    if (digitalRead(kStartBtnPin) == LOW) {
-      lastBtnCheck = millis();
-      isFuzzingRunning = !isFuzzingRunning;
-      Serial.printf("Btn 1: Fuzzing %s\n", isFuzzingRunning ? "RUNNING" : "PAUSED");
-      updateOledUI();
-    }
+  // 4. State machine
+  switch (s_appState) {
 
-    if (digitalRead(kModeBtnPin) == LOW) {
-      lastBtnCheck = millis();
-      currentMode = (ModeType)((currentMode + 1) % MODE_COUNT);
-      Serial.printf("Btn 2: Mode -> %s\n", modeNames[currentMode]);
-      updateOledUI();
-    }
+    // ---- MENU ----
+    case APP_MENU:
+      // Don't monitor heartbeat during menu navigation
+      // (prevents spam from floating pin when no DUT connected)
+      handle_menu_input(btn);
+      break;
 
-    if (digitalRead(kResetBtnPin) == LOW) {
-      lastBtnCheck = millis();
-      totalPacketsSent = 0;
-      totalCrashes = 0;
-      currentSequence = 0;
-      currentSeed = 0xC0DEC0DE;
-      for (int i = 0; i < 7; i++) aiMutationCrashWeights[i] = 1;
-      aiTotalWeight = 7;
-      Serial.println("Btn 3: Reset Stats & AI Weights!");
-      updateOledUI();
-    }
+    // ---- PROTOCOL CHECK ----
+    case APP_PROTOCOL_CHECK:
+      heartbeat_update();
+      handle_protocol_check_input(btn);
+      break;
 
-    if (digitalRead(kOledBtnPin) == LOW) {
-      lastBtnCheck = millis();
-      oledOn = !oledOn;
-      if (oledOn) {
-        display.ssd1306_command(SSD1306_DISPLAYON);
-        updateOledUI();
-        Serial.println("Btn 4: OLED ON");
-      } else {
-        display.ssd1306_command(SSD1306_DISPLAYOFF);
-        Serial.println("Btn 4: OLED OFF");
+    // ---- FUZZING ----
+    case APP_FUZZING:
+      run_fuzzing_cycle();
+      // During pause, allow buttons
+      if (!campaign_is_running()) {
+        handle_menu_input(btn);
       }
+      break;
+
+    // ---- FAILURE MENU ----
+    case APP_FAILURE_MENU:
+      handle_failure_menu_input(btn);
+      break;
+
+    // ---- REPLAYING ----
+    case APP_REPLAYING:
+      update_replay();
+      break;
+
+    // ---- MINIMIZING ----
+    case APP_MINIMIZING:
+      update_minimize();
+      break;
+
+    // ---- RESULT ----
+    case APP_RESULT:
+      handle_result_input(btn);
+      break;
+
+    // ---- SERIAL COMMAND MODE ----
+    case APP_SERIAL_CMD:
+      // Handled via process_serial_commands above
+      break;
+
+    default:
+      break;
+  }
+
+  // 5. Update OLED (non-blocking, 500ms refresh)
+  oled_ui_update();
+}
+
+// ============================================
+// Menu Input Handler
+// ============================================
+static void handle_menu_input(ButtonAction btn) {
+  UiScreen screen = oled_ui_get_screen();
+
+  switch (btn) {
+    case BTN_UP:
+      oled_ui_select_next();
+      break;
+
+    case BTN_DOWN:
+      oled_ui_select_prev();
+      break;
+
+    case BTN_BACK:
+      // Go back to main menu from any sub-menu
+      if (screen != SCREEN_MAIN_MENU) {
+        oled_ui_set_screen(SCREEN_MAIN_MENU);
+      }
+      break;
+
+    case BTN_SELECT: {
+      uint8_t sel = oled_ui_confirm();
+
+      switch (screen) {
+        case SCREEN_MAIN_MENU:
+          switch (sel) {
+            case 0:  // NEW TEST
+              oled_ui_set_screen(SCREEN_BOARD_SELECT);
+              break;
+            case 1:  // RESULTS
+              oled_ui_set_screen(SCREEN_RESULT);
+              break;
+            case 2:  // FAILURES
+              oled_ui_set_screen(SCREEN_FAILURE_MENU);
+              break;
+            case 3:  // SETTINGS
+              oled_ui_set_screen(SCREEN_SETTINGS);
+              break;
+            case 4:  // ABOUT
+              oled_ui_set_screen(SCREEN_ABOUT);
+              break;
+          }
+          break;
+
+        case SCREEN_BOARD_SELECT:
+          s_selectedBoard = (TargetBoard)sel;
+          oled_ui_set_board(s_selectedBoard);
+          oled_ui_set_screen(SCREEN_PROTOCOL_SELECT);
+          break;
+
+        case SCREEN_PROTOCOL_SELECT:
+          s_selectedProtocol = (ProtocolMode)sel;
+          if (sel == 3) {
+            // CAN not yet implemented
+            Serial.println("CAN not yet available. Select UART, SPI, or I2C.");
+            break;
+          }
+          // Show wiring diagram for this board + protocol
+          oled_ui_set_wiring_protocol(s_selectedProtocol);
+          oled_ui_set_screen(SCREEN_WIRING_DIAGRAM);
+          break;
+
+        case SCREEN_WIRING_DIAGRAM:
+          // SELECT pressed on wiring diagram = proceed to test select
+          oled_ui_set_screen(SCREEN_TEST_SELECT);
+          break;
+
+        case SCREEN_TEST_SELECT:
+          s_selectedProfile = (TestProfile)sel;
+          if (sel == 3) {
+            // Custom — use 30s default, future: input via serial
+            s_customDurationMs = 30000;
+          }
+          oled_ui_set_screen(SCREEN_TEST_CONFIRM);
+          break;
+
+        case SCREEN_TEST_CONFIRM:
+          if (sel == 0) {
+            // YES — start protocol check then campaign
+            start_campaign();
+          } else {
+            // NO — go back
+            oled_ui_set_screen(SCREEN_MAIN_MENU);
+          }
+          break;
+
+        default:
+          break;
+      }
+      break;
+    }
+
+    default:
+      break;
+  }
+}
+
+// ============================================
+// Protocol Check Input
+// ============================================
+static void handle_protocol_check_input(ButtonAction btn) {
+  bool hbAlive = heartbeat_update();
+
+  // Update readiness
+  oled_ui_set_selection(hbAlive ? 0 : 1);
+  oled_ui_redraw();
+
+  if (btn == BTN_SELECT && hbAlive) {
+    // Ready — start the campaign
+    oled_ui_set_screen(SCREEN_FUZZING);
+    s_appState = APP_FUZZING;
+    campaign_start(s_selectedProtocol, s_selectedProfile, s_customDurationMs);
+    Serial.printf("CAMPAIGN STARTED: %s protocol, %s profile\n",
+                  ProtocolNames[s_selectedProtocol],
+                  TestProfileNames[s_selectedProfile]);
+  } else if (btn == BTN_BACK) {
+    oled_ui_set_screen(SCREEN_MAIN_MENU);
+    s_appState = APP_MENU;
+  }
+}
+
+// ============================================
+// Start Campaign
+// ============================================
+static void start_campaign(void) {
+  // Initialize the appropriate fuzzer
+  switch (s_selectedProtocol) {
+    case PROTO_UART:
+      uart_fuzzer_init();
+      uart_parser_init();
+      break;
+    case PROTO_SPI:
+      spi_fuzzer_init();
+      break;
+    case PROTO_I2C:
+      i2c_fuzzer_init();
+      break;
+    default:
+      break;
+  }
+
+  // Reset heartbeat and check if DUT is alive
+  heartbeat_reset();
+  crash_detector_clear();
+  delay(100);  // Brief settle time
+  bool hbAlive = heartbeat_update();
+
+  if (hbAlive) {
+    // Heartbeat detected — skip protocol check, start directly
+    Serial.printf("Heartbeat detected — starting campaign immediately.\n");
+    oled_ui_set_screen(SCREEN_FUZZING);
+    s_appState = APP_FUZZING;
+    campaign_start(s_selectedProtocol, s_selectedProfile, s_customDurationMs);
+    Serial.printf("CAMPAIGN STARTED: %s protocol, %s profile\n",
+                  ProtocolNames[s_selectedProtocol],
+                  TestProfileNames[s_selectedProfile]);
+  } else {
+    // No heartbeat yet — show protocol check, wait for user to confirm
+    oled_ui_set_screen(SCREEN_PROTOCOL_CHECK);
+    s_appState = APP_PROTOCOL_CHECK;
+    Serial.printf("Protocol check: %s — waiting for heartbeat...\n",
+                  ProtocolNames[s_selectedProtocol]);
+  }
+}
+
+// ============================================
+// Fuzzing Cycle
+// ============================================
+static void run_fuzzing_cycle(void) {
+  // 1. Check if campaign is complete
+  campaign_update();
+
+  if (campaign_is_complete()) {
+    Serial.println("Campaign complete — calculating results.");
+    indicators_led_pass_on();
+    s_appState = APP_RESULT;
+    oled_ui_set_screen(SCREEN_RESULT);
+    return;
+  }
+
+  if (!campaign_is_running()) {
+    // Campaign paused or stopped
+    if (campaign_is_paused()) {
+      return;  // Wait for resume
+    }
+    return;
+  }
+
+  // 2. Monitor heartbeat
+  bool hbAlive = heartbeat_update();
+
+  // 3. Monitor UART responses
+  if (s_selectedProtocol == PROTO_UART) {
+    uart_parser_poll();
+
+    // Process response
+    if (uart_parser_has_response()) {
+      const UartResponse* resp = uart_parser_get_response();
+
+      // Correlate with expected sequence
+      if (resp->status == Proto::StatusAck) {
+        campaign_record_ack();
+      } else {
+        campaign_record_nack();
+      }
+
+      // Log response
+      Serial.printf("RESP seq=%u status=0x%02X %s\n",
+                    resp->sequence, resp->status,
+                    resp->status == Proto::StatusAck ? "ACK" :
+                    resp->status == Proto::StatusNackOverlen ? "NACK-OVERLEN" :
+                    resp->status == Proto::StatusNackChecksum ? "NACK-CHECKSUM" : "UNKNOWN");
+
+      uart_parser_clear_response();
     }
   }
 
-  // 3. Packet Transmission Interval
-  if (isFuzzingRunning && (millis() - lastPacketTime > 100)) {
-    lastPacketTime = millis();
-    executeFuzzingCycle();
+  // 4. Check for crash detection
+  if (crash_detector_update()) {
+    // Failure detected!
+    Serial.println("FAILURE DETECTED — campaign paused.");
+    campaign_stop();
+    indicators_set_pass(false);
+    indicators_set_fail(true);
+    indicators_beep_start(200);
+    s_appState = APP_FAILURE_MENU;
+    oled_ui_set_screen(SCREEN_FAILURE_MENU);
+    oled_ui_redraw();
+
+    // Store the failure
+    const FailureRecord* rec = failure_get_current();
+    if (rec) failure_store_add(rec);
+
+    return;
   }
 
-  // 4. OLED Refresh
-  if (millis() - lastUiTime > 500) {
-    lastUiTime = millis();
-    updateOledUI();
+  // 5. Transmit packet
+  static uint32_t lastPacketMs = 0;
+  if (millis() - lastPacketMs >= Proto::PacketIntervalMs) {
+    lastPacketMs = millis();
+
+    // Select mutation based on campaign phase
+    MutationType mut = campaign_select_mutation();
+
+    // Flash active LED
+    indicators_set_active(true);
+
+    switch (s_selectedProtocol) {
+      case PROTO_UART:
+        uart_fuzzer_send(mut);
+        break;
+      case PROTO_SPI:
+        spi_fuzzer_send(mut);
+        break;
+      case PROTO_I2C:
+        i2c_fuzzer_send(mut);
+        break;
+      default:
+        break;
+    }
+
+    indicators_set_active(false);
+  }
+
+  // 6. Update indicators
+  if (hbAlive) {
+    indicators_set_pass(true);
+    indicators_set_fail(false);
+  } else {
+    indicators_set_pass(false);
+  }
+}
+
+// ============================================
+// Failure Menu Input
+// ============================================
+static void handle_failure_menu_input(ButtonAction btn) {
+  switch (btn) {
+    case BTN_UP:
+      oled_ui_select_next();
+      break;
+
+    case BTN_DOWN:
+      oled_ui_select_prev();
+      break;
+
+    case BTN_BACK:
+      oled_ui_set_screen(SCREEN_MAIN_MENU);
+      s_appState = APP_MENU;
+      break;
+
+    case BTN_SELECT: {
+      uint8_t sel = oled_ui_confirm();
+
+      switch (sel) {
+        case 0:  // REPLAY FAILURE
+          start_replay();
+          break;
+
+        case 1:  // MINIMIZE
+          start_minimize();
+          break;
+
+        case 2:  // REPORT
+          failure_export_serial(failure_get_count() - 1);
+          Serial.println("Report exported via serial.");
+          break;
+
+        case 3:  // TRY FIXING
+          Serial.println("TRY FIX — PC companion required. Export data first.");
+          Serial.println("Use serial command: EXPORT");
+          break;
+
+        case 4:  // VIEW DETAILS
+          oled_ui_set_screen(SCREEN_FAILURE_DETAIL);
+          break;
+
+        case 5:  // SAVE & EXIT
+          // Failure already stored. Export serial data.
+          failure_store_export_all();
+          oled_ui_set_screen(SCREEN_MAIN_MENU);
+          s_appState = APP_MENU;
+          break;
+      }
+      break;
+    }
+
+    default:
+      break;
+  }
+}
+
+// ============================================
+// Replay Engine
+// ============================================
+static void start_replay(void) {
+  s_replayAttempts = 0;
+  s_replayFails = 0;
+  s_replayRunning = true;
+  oled_ui_set_screen(SCREEN_REPLAY);
+  s_appState = APP_REPLAYING;
+
+  Serial.println("REPLAY START — resetting DUT heartbeat monitor...");
+  heartbeat_reset();
+  crash_detector_clear();
+
+  // Small delay for DUT to recover
+  delay(500);
+}
+
+static void update_replay(void) {
+  if (!s_replayRunning) return;
+
+  // Wait for DUT heartbeat to recover
+  heartbeat_update();
+
+  if (!heartbeat_is_alive()) {
+    // Still waiting for DUT to come back
+    oled_ui_redraw();
+    return;
+  }
+
+  // DUT is alive — replay the failing testcase
+  const FailureRecord* rec = failure_get_current();
+  if (!rec) {
+    s_replayRunning = false;
+    oled_ui_set_screen(SCREEN_FAILURE_MENU);
+    s_appState = APP_FAILURE_MENU;
+    return;
+  }
+
+  s_replayAttempts++;
+
+  Serial.printf("REPLAY #%u/%u — seq=%u, mutation=%s, len=%u\n",
+                s_replayAttempts, s_replayMaxAttempts,
+                rec->testcase.sequence,
+                MutationNames[rec->testcase.mutation],
+                rec->testcase.packetLen);
+
+  // Send the exact same packet
+  uart_fuzzer_replay(&rec->testcase);
+
+  // Wait for response and heartbeat check
+  uint32_t startMs = millis();
+  bool responseReceived = false;
+  bool heartbeatFailed = false;
+
+  while (millis() - startMs < 500) {
+    uart_parser_poll();
+    heartbeat_update();
+
+    if (uart_parser_has_response()) {
+      responseReceived = true;
+      uart_parser_clear_response();
+    }
+
+    if (!heartbeat_is_alive()) {
+      heartbeatFailed = true;
+      break;
+    }
+  }
+
+  // Evaluate replay result
+  if (heartbeatFailed) {
+    s_replayFails++;
+    Serial.printf("REPLAY #%u: HEARTBEAT LOST — FAIL\n", s_replayAttempts);
+    crash_detector_clear();
+    heartbeat_reset();
+  } else {
+    Serial.printf("REPLAY #%u: HEARTBEAT OK — PASS\n", s_replayAttempts);
+  }
+
+  // Check if we've done enough attempts
+  if (s_replayAttempts >= s_replayMaxAttempts) {
+    s_replayRunning = false;
+
+    // Determine reproducibility
+    FailureStatus status;
+    if (s_replayFails == s_replayAttempts) {
+      status = STATUS_REPRODUCIBLE;
+    } else if (s_replayFails > 0) {
+      status = STATUS_INTERMITTENT;
+    } else {
+      status = STATUS_NOT_REPRODUCIBLE;
+    }
+
+    failure_update_status(status, s_replayAttempts, s_replayFails);
+
+    Serial.printf("REPLAY RESULT: %u/%u failed — %s\n",
+                  s_replayFails, s_replayAttempts,
+                  FailureStatusNames[status]);
+
+    indicators_beep_start(150);
+    oled_ui_set_screen(SCREEN_REPLAY);
+    oled_ui_redraw();
+
+    // Return to failure menu after showing result
+    delay(2000);
+    oled_ui_set_screen(SCREEN_FAILURE_MENU);
+    s_appState = APP_FAILURE_MENU;
+  }
+}
+
+// ============================================
+// Minimizer
+// ============================================
+static void start_minimize(void) {
+  const FailureRecord* rec = failure_get_current();
+  if (!rec) return;
+
+  s_minimCurrentLen = rec->testcase.packetLen;
+  s_minimBestLen = rec->testcase.packetLen;
+  s_minimRunning = true;
+  oled_ui_set_screen(SCREEN_MINIMIZING);
+  s_appState = APP_MINIMIZING;
+
+  Serial.printf("MINIMIZE START — original %u bytes\n", s_minimCurrentLen);
+}
+
+static void update_minimize(void) {
+  if (!s_minimRunning) return;
+
+  const FailureRecord* rec = failure_get_current();
+  if (!rec) {
+    s_minimRunning = false;
+    return;
+  }
+
+  // Protocol-aware minimization: try reducing payload length
+  // Start from current length, try smaller sizes
+  uint32_t tryLen = s_minimCurrentLen - 1;
+
+  if (tryLen < Proto::UartFrameOverhead + 1) {
+    // Can't go smaller than header + 1 byte
+    s_minimRunning = false;
+    failure_update_minimized(s_minimBestLen);
+
+    Serial.printf("MINIMIZE COMPLETE: %u -> %u bytes\n",
+                  rec->testcase.packetLen, s_minimBestLen);
+
+    indicators_beep_start(100);
+    oled_ui_set_screen(SCREEN_FAILURE_MENU);
+    s_appState = APP_FAILURE_MENU;
+    return;
+  }
+
+  // Build a modified packet with reduced length
+  Serial.printf("MINIMIZE: trying %u bytes...\n", tryLen);
+
+  // Reset DUT state
+  heartbeat_reset();
+  crash_detector_clear();
+  delay(200);
+
+  // Wait for heartbeat
+  uint32_t waitStart = millis();
+  while (!heartbeat_is_alive() && millis() - waitStart < 2000) {
+    heartbeat_update();
+  }
+
+  if (!heartbeat_is_alive()) {
+    Serial.println("MINIMIZE: DUT not responding, stopping minimization.");
+    s_minimRunning = false;
+    failure_update_minimized(s_minimBestLen);
+    oled_ui_set_screen(SCREEN_FAILURE_MENU);
+    s_appState = APP_FAILURE_MENU;
+    return;
+  }
+
+  // Generate minimized packet: same mutation, shorter payload
+  uint8_t buffer[64];
+  buffer[0] = Proto::UartSync;
+  buffer[1] = Proto::UartCmd;
+  uint8_t payLen = (uint8_t)(tryLen - Proto::UartFrameOverhead);
+  buffer[2] = payLen;
+  buffer[3] = 0x00;  // Seq low
+  buffer[4] = 0x00;  // Seq high
+
+  uint8_t checksum = buffer[1] ^ buffer[2] ^ buffer[3] ^ buffer[4];
+  for (uint8_t i = 0; i < payLen; i++) {
+    buffer[5 + i] = (uint8_t)(i & 0xFF);
+    checksum ^= buffer[5 + i];
+  }
+
+  if (rec->testcase.mutation == MUT_BAD_CRC) {
+    checksum ^= 0xFF;  // Keep the bad CRC
+  }
+
+  buffer[5 + payLen] = checksum;
+
+  // Send
+  Serial2.write(buffer, (uint8_t)(tryLen));
+
+  // Check if failure occurs
+  uint32_t checkStart = millis();
+  bool failDetected = false;
+
+  while (millis() - checkStart < 500) {
+    heartbeat_update();
+    if (!heartbeat_is_alive()) {
+      failDetected = true;
+      break;
+    }
+  }
+
+  if (failDetected) {
+    // This shorter length also fails — keep it
+    s_minimBestLen = tryLen;
+    s_minimCurrentLen = tryLen;
+    Serial.printf("MINIMIZE: %u bytes -> STILL FAILS\n", tryLen);
+  } else {
+    // This shorter length passes — the minimal failure is one byte larger
+    Serial.printf("MINIMIZE: %u bytes -> PASSES (minimal is %u)\n", tryLen, s_minimCurrentLen);
+    s_minimRunning = false;
+    failure_update_minimized(s_minimBestLen);
+
+    Serial.printf("MINIMIZE COMPLETE: %u -> %u bytes\n",
+                  rec->testcase.packetLen, s_minimBestLen);
+
+    indicators_beep_start(100);
+    delay(1500);
+    oled_ui_set_screen(SCREEN_FAILURE_MENU);
+    s_appState = APP_FAILURE_MENU;
+  }
+
+  oled_ui_redraw();
+}
+
+// ============================================
+// Result Input
+// ============================================
+static void handle_result_input(ButtonAction btn) {
+  switch (btn) {
+    case BTN_UP:
+      oled_ui_select_next();
+      break;
+
+    case BTN_DOWN:
+      oled_ui_select_prev();
+      break;
+
+    case BTN_BACK:
+      oled_ui_set_screen(SCREEN_MAIN_MENU);
+      s_appState = APP_MENU;
+      break;
+
+    case BTN_SELECT: {
+      uint8_t sel = oled_ui_confirm();
+      switch (sel) {
+        case 0:  // VIEW RESULT
+          result_print_report();
+          break;
+        case 1:  // VIEW FAILURES
+          if (failure_get_count() > 0) {
+            oled_ui_set_screen(SCREEN_FAILURE_MENU);
+          }
+          break;
+        case 2:  // REPLAY FAILURE
+          if (failure_get_count() > 0) {
+            start_replay();
+          }
+          break;
+        case 3:  // NEW TEST
+          oled_ui_set_screen(SCREEN_MAIN_MENU);
+          s_appState = APP_MENU;
+          break;
+      }
+      break;
+    }
+
+    default:
+      break;
+  }
+}
+
+// ============================================
+// Serial Command Processing
+// ============================================
+static void process_serial_commands(void) {
+  while (Serial.available()) {
+    char c = Serial.read();
+    if (c == '\n' || c == '\r') {
+      if (s_serialBufIdx > 0) {
+        s_serialBuf[s_serialBufIdx] = '\0';
+
+        // Convert to uppercase for command matching
+        for (uint8_t i = 0; i < s_serialBufIdx; i++) {
+          if (s_serialBuf[i] >= 'a' && s_serialBuf[i] <= 'z') {
+            s_serialBuf[i] -= 32;
+          }
+        }
+
+        // Process commands
+        if (strcmp(s_serialBuf, "START") == 0) {
+          if (s_appState == APP_MENU) {
+            start_campaign();
+          }
+        } else if (strcmp(s_serialBuf, "STOP") == 0) {
+          campaign_stop();
+          s_appState = APP_MENU;
+          oled_ui_set_screen(SCREEN_MAIN_MENU);
+        } else if (strcmp(s_serialBuf, "PAUSE") == 0) {
+          campaign_toggle_pause();
+        } else if (strcmp(s_serialBuf, "STATUS") == 0) {
+          Serial.printf("State: %s\n", s_appState == APP_FUZZING ? "FUZZING" : "IDLE");
+          Serial.printf("Packets: %u\n", campaign_get_packet_count());
+          Serial.printf("Heartbeat: %s\n", heartbeat_is_alive() ? "OK" : "LOST");
+          const CampaignStats* stats = campaign_get_stats();
+          Serial.printf("ACKs: %u, NACKs: %u, Timeouts: %u\n",
+                        stats->totalAcks, stats->totalNacks, stats->totalNoResponse);
+        } else if (strcmp(s_serialBuf, "EXPORT") == 0) {
+          failure_store_export_all();
+        } else if (strcmp(s_serialBuf, "REPLAY") == 0) {
+          if (failure_get_count() > 0) {
+            start_replay();
+          } else {
+            Serial.println("No failures to replay.");
+          }
+        } else if (strcmp(s_serialBuf, "RESET") == 0) {
+          campaign_init();
+          failure_init();
+          failure_store_init();
+          s_appState = APP_MENU;
+          oled_ui_set_screen(SCREEN_MAIN_MENU);
+          Serial.println("All state reset.");
+        } else if (strcmp(s_serialBuf, "HELP") == 0) {
+          Serial.println("Commands:");
+          Serial.println("  START  — Start test campaign");
+          Serial.println("  STOP   — Stop current campaign");
+          Serial.println("  PAUSE  — Pause/resume campaign");
+          Serial.println("  STATUS — Show current status");
+          Serial.println("  EXPORT — Export all failures");
+          Serial.println("  REPLAY — Replay last failure");
+          Serial.println("  RESET  — Reset all state");
+          Serial.println("  HELP   — Show this help");
+        } else {
+          Serial.printf("Unknown command: %s (type HELP for list)\n", s_serialBuf);
+        }
+
+        s_serialBufIdx = 0;
+      }
+    } else if (s_serialBufIdx < sizeof(s_serialBuf) - 1) {
+      s_serialBuf[s_serialBufIdx++] = c;
+    }
   }
 }
