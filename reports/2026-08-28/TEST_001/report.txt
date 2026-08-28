@@ -1,0 +1,44 @@
+============================================================
+  AUTOFUZZER v4.0 — TEST REPORT
+============================================================
+  Generated: 2026-08-28 16:58:13
+  Test ID:   TEST_001
+
+  Protocol:  UART
+  Profile:   QUICK 30s
+  Duration:  30.0 seconds
+
+  PACKETS
+    Sent:       300
+    ACKs:       0
+    NACKs:      0
+    No Response:0
+    Failures:   2
+
+  ROBUSTNESS SCORE: 61/100
+  VERDICT:          FAIL
+
+  CATEGORY SCORES
+    Communication:   100/100
+    Boundary:        33/100
+    Malformed:       0/100
+    Recovery:        50/100
+    Heartbeat:       25/100
+    Random Input:    100/100
+============================================================
+
+  FAILURES (1 total)
+------------------------------------------------------------
+  #0: HEARTBEAT_TIMEOUT — REPRODUCIBLE
+    Sequence:   183
+    Mutation:   OVERLENGTH
+    Pkt Len:    51 bytes
+    HB Lost:    400 ms
+    DUT Resp:   No
+    Replays:    3/3
+    Minimized:  33
+    Packet:     
+
+============================================================
+  AutoFuzzer v4.0 — github.com/Alwin111/AutoFuzzer
+============================================================

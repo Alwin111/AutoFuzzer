@@ -63,6 +63,7 @@ class AutoFuzzerConnection:
         try:
             self._serial = serial.Serial(target_port, self.baud, timeout=1)
             time.sleep(2)  # Wait for ESP32 reset
+            self._serial.reset_input_buffer()  # Flush boot output
             self.port = target_port
             print(f"[+] Connected to {target_port} @ {self.baud} baud")
             return True

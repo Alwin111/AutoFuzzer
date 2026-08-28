@@ -1,0 +1,53 @@
+{
+  "autofuzzer_version": "4.0",
+  "generated_at": "2026-08-28T16:58:13.748822",
+  "test_id": "TEST_001",
+  "summary": {
+    "protocol": "UART",
+    "profile": "QUICK 30s",
+    "duration_ms": 30000,
+    "total_packets": 300,
+    "acks": 0,
+    "nacks": 0,
+    "no_response": 0,
+    "heartbeat_timeouts": 5,
+    "total_failures": 2,
+    "robustness_score": 61,
+    "verdict": "FAIL",
+    "category_scores": {
+      "communication": 100,
+      "boundary": 33,
+      "malformed": 0,
+      "recovery": 50,
+      "heartbeat": 25,
+      "random_input": 100
+    }
+  },
+  "failures": [
+    {
+      "id": 0,
+      "failure_type": "HEARTBEAT_TIMEOUT",
+      "status": "REPRODUCIBLE",
+      "protocol": "UART",
+      "profile": "QUICK 30s",
+      "sequence": 183,
+      "mutation": "OVERLENGTH",
+      "packet_len": 51,
+      "payload_len": 45,
+      "seed": "0x00000000",
+      "prng_before": "0x00000000",
+      "prng_after": "0x00000000",
+      "heartbeat_lost_ms": 400,
+      "dut_responded": false,
+      "dut_status": "0x00",
+      "dut_resp_time_ms": 0,
+      "packets_at_fail": 183,
+      "elapsed_ms": 12500,
+      "replay_attempts": 3,
+      "replay_fails": 3,
+      "minimized_len": 33,
+      "packet_bytes": [],
+      "timestamp": ""
+    }
+  ]
+}

@@ -869,14 +869,44 @@ static void process_serial_commands(void) {
           Serial.println("All state reset.");
         } else if (strcmp(s_serialBuf, "HELP") == 0) {
           Serial.println("Commands:");
-          Serial.println("  START  — Start test campaign");
-          Serial.println("  STOP   — Stop current campaign");
-          Serial.println("  PAUSE  — Pause/resume campaign");
-          Serial.println("  STATUS — Show current status");
-          Serial.println("  EXPORT — Export all failures");
-          Serial.println("  REPLAY — Replay last failure");
-          Serial.println("  RESET  — Reset all state");
-          Serial.println("  HELP   — Show this help");
+          Serial.println("  START   — Start test campaign");
+          Serial.println("  STOP    — Stop current campaign");
+          Serial.println("  PAUSE   — Pause/resume campaign");
+          Serial.println("  STATUS  — Show current status");
+          Serial.println("  EXPORT  — Export all failures");
+          Serial.println("  REPLAY  — Replay last failure");
+          Serial.println("  RESET   — Reset all state");
+          Serial.println("  RESULT  — Print test result report");
+          Serial.println("  SIMFAIL — Simulate failure (debug)");
+          Serial.println("  HELP    — Show this help");
+        } else if (strcmp(s_serialBuf, "SIMFAIL") == 0) {
+          Serial.println("DEBUG: Simulating heartbeat timeout failure...");
+          static TestcaseMeta fakeTC;
+          memset(&fakeTC, 0, sizeof(TestcaseMeta));
+          fakeTC.sequence = 999;
+          fakeTC.mutation = MUT_OVERLENGTH;
+          fakeTC.packetLen = 51;
+          fakeTC.payloadLen = 45;
+          fakeTC.packetBytes[0] = 0xA5;
+          fakeTC.packetBytes[1] = 0x01;
+          fakeTC.packetBytes[2] = 45;
+          fakeTC.packetBytes[3] = 0xE7;
+          fakeTC.packetBytes[4] = 0x03;
+          fakeTC.packetBytes[5] = 0xDE;
+          fakeTC.packetBytes[6] = 0xAD;
+          fakeTC.timestampMs = millis();
+          failure_freeze(FAIL_HEARTBEAT_TIMEOUT, &fakeTC, 400, false, 0, 0);
+          indicators_set_fail(true);
+          indicators_beep_start(200);
+          s_appState = APP_FAILURE_MENU;
+          oled_ui_set_screen(SCREEN_FAILURE_MENU);
+          oled_ui_redraw();
+          const FailureRecord* rec = failure_get_current();
+          if (rec) failure_store_add(rec);
+          Serial.println("DEBUG: Failure frozen. Use REPLAY or EXPORT to test.");
+        } else if (strcmp(s_serialBuf, "RESULT") == 0) {
+          result_calculate();
+          result_print_report();
         } else {
           Serial.printf("Unknown command: %s (type HELP for list)\n", s_serialBuf);
         }
