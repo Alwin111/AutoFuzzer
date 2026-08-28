@@ -213,6 +213,30 @@ bool oled_ui_is_on(void) {
   return s_oledOn;
 }
 
+void oled_ui_sleep(void) {
+  if (s_oledOn) {
+    s_display.ssd1306_command(SSD1306_DISPLAYOFF);
+    // Send I2C command to put display to sleep
+    // This releases the I2C bus for fuzzing
+    delay(10);
+  }
+}
+
+void oled_ui_wake(void) {
+  // Re-init Wire for OLED (I2C fuzzer called Wire.end())
+  Wire.begin(Pin::OledSda, Pin::OledScl);
+  delay(20);  // Let bus settle
+  // Send display-on command
+  s_display.ssd1306_command(SSD1306_DISPLAYON);
+  delay(5);  // Let display wake up
+  s_lastRefreshMs = 0;  // Force next update cycle to redraw
+  s_oledOn = true;
+  // NOTE: Do NOT call oled_ui_redraw() here.
+  // s_display.display() could block if I2C bus is stuck,
+  // freezing the main loop and breaking button input.
+  // Let oled_ui_update() in the main loop handle the redraw.
+}
+
 // ============================================
 // Drawing Helpers
 // ============================================
@@ -359,27 +383,29 @@ static const WiringInfo kSpiWiring[] = {
 };
 
 // I2C wiring diagrams per board
+// Uses SAME bus as OLED (GPIO 21/22)
+// OLED display will be OFF during I2C fuzzing
 static const WiringInfo kI2cWiring[] = {
   // STM32 Nucleo
   { "I2C -> STM32 Nucleo",
     "21 SDA <-> PB7",
     "22 SCL <-> PB6",
-    "",
-    "",
+    "25     <- PB5 HB",
+    "OLED OFF during test",
     "Press SELECT" },
   // ESP32
   { "I2C -> ESP32",
     "21 SDA <-> 21",
     "22 SCL <-> 22",
     "",
-    "",
+    "OLED OFF during test",
     "Press SELECT" },
   // Arduino Nano
   { "I2C -> Arduino Nano",
     "21 SDA <-> A4",
     "22 SCL <-> A5",
-    "",
-    "",
+    "25     <- D4 HB",
+    "OLED OFF during test",
     "Press SELECT" },
 };
 

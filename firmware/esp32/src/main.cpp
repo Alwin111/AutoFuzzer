@@ -375,6 +375,7 @@ static void run_fuzzing_cycle(void) {
   campaign_update();
 
   if (campaign_is_complete()) {
+    if (s_selectedProtocol == PROTO_I2C) i2c_fuzzer_deinit();
     Serial.println("Campaign complete — calculating results.");
     indicators_led_pass_on();
     s_appState = APP_RESULT;
@@ -393,22 +394,19 @@ static void run_fuzzing_cycle(void) {
   // 2. Monitor heartbeat
   bool hbAlive = heartbeat_update();
 
-  // 3. Monitor UART responses
+  // 3. Monitor protocol responses
   if (s_selectedProtocol == PROTO_UART) {
     uart_parser_poll();
 
-    // Process response
     if (uart_parser_has_response()) {
       const UartResponse* resp = uart_parser_get_response();
 
-      // Correlate with expected sequence
       if (resp->status == Proto::StatusAck) {
         campaign_record_ack();
       } else {
         campaign_record_nack();
       }
 
-      // Log response
       Serial.printf("RESP seq=%u status=0x%02X %s\n",
                     resp->sequence, resp->status,
                     resp->status == Proto::StatusAck ? "ACK" :
@@ -417,11 +415,28 @@ static void run_fuzzing_cycle(void) {
 
       uart_parser_clear_response();
     }
+  } else if (s_selectedProtocol == PROTO_I2C) {
+    // I2C ACK/NACK detection
+    if (i2c_fuzzer_has_response()) {
+      I2cResponse resp;
+      if (i2c_fuzzer_get_response(&resp)) {
+        if (resp.writeResult == Proto::I2cRespSuccess) {
+          campaign_record_ack();
+        } else if (resp.writeResult == Proto::I2cRespNackAddr ||
+                   resp.writeResult == Proto::I2cRespNackData) {
+          campaign_record_nack();
+        } else {
+          campaign_record_no_response();
+        }
+      }
+      i2c_fuzzer_clear_response();
+    }
   }
 
   // 4. Check for crash detection
   if (crash_detector_update()) {
     // Failure detected!
+    if (s_selectedProtocol == PROTO_I2C) i2c_fuzzer_deinit();
     Serial.println("FAILURE DETECTED — campaign paused.");
     campaign_stop();
     indicators_set_pass(false);
@@ -840,6 +855,7 @@ static void process_serial_commands(void) {
             start_campaign();
           }
         } else if (strcmp(s_serialBuf, "STOP") == 0) {
+          if (s_selectedProtocol == PROTO_I2C) i2c_fuzzer_deinit();
           campaign_stop();
           s_appState = APP_MENU;
           oled_ui_set_screen(SCREEN_MAIN_MENU);
@@ -847,11 +863,16 @@ static void process_serial_commands(void) {
           campaign_toggle_pause();
         } else if (strcmp(s_serialBuf, "STATUS") == 0) {
           Serial.printf("State: %s\n", s_appState == APP_FUZZING ? "FUZZING" : "IDLE");
+          Serial.printf("Protocol: %s\n", ProtocolNames[s_selectedProtocol]);
           Serial.printf("Packets: %u\n", campaign_get_packet_count());
           Serial.printf("Heartbeat: %s\n", heartbeat_is_alive() ? "OK" : "LOST");
           const CampaignStats* stats = campaign_get_stats();
           Serial.printf("ACKs: %u, NACKs: %u, Timeouts: %u\n",
                         stats->totalAcks, stats->totalNacks, stats->totalNoResponse);
+          if (s_selectedProtocol == PROTO_I2C) {
+            Serial.printf("I2C bus: ACKs=%u NACKs=%u Errors=%u\n",
+                          i2c_fuzzer_get_acks(), i2c_fuzzer_get_nacks(), i2c_fuzzer_get_errors());
+          }
         } else if (strcmp(s_serialBuf, "EXPORT") == 0) {
           failure_store_export_all();
         } else if (strcmp(s_serialBuf, "REPLAY") == 0) {
@@ -878,7 +899,35 @@ static void process_serial_commands(void) {
           Serial.println("  RESET   — Reset all state");
           Serial.println("  RESULT  — Print test result report");
           Serial.println("  SIMFAIL — Simulate failure (debug)");
-          Serial.println("  HELP    — Show this help");
+          Serial.println("  I2CSTAT  — Show I2C bus statistics");
+          Serial.println("  I2CSCAN  — Scan I2C bus for devices");
+          Serial.println("  SETUART  — Set protocol to UART");
+          Serial.println("  SETSPI   — Set protocol to SPI");
+          Serial.println("  SETI2C   — Set protocol to I2C");
+          Serial.println("  HELP     — Show this help");
+        } else if (strcmp(s_serialBuf, "I2CSTAT") == 0) {
+          Serial.println("--- I2C Bus Statistics ---");
+          Serial.printf("Bus: SDA=%d SCL=%d (Wire1)\n", Pin::I2cSda, Pin::I2cScl);
+          Serial.printf("DUT address: 0x%02X\n", Proto::I2cDefaultAddr);
+          Serial.printf("Total ACKs:  %u\n", i2c_fuzzer_get_acks());
+          Serial.printf("Total NACKs: %u\n", i2c_fuzzer_get_nacks());
+          Serial.printf("Total Errors: %u\n", i2c_fuzzer_get_errors());
+        } else if (strcmp(s_serialBuf, "I2CSCAN") == 0) {
+          // Quick I2C bus scan to find devices
+          Serial.println("--- I2C Bus Scan ---");
+          i2c_fuzzer_init();  // Ensure Wire1 is running
+          i2c_fuzzer_scan();
+        } else if (strcmp(s_serialBuf, "SETUART") == 0) {
+          s_selectedProtocol = PROTO_UART;
+          Serial.println("Protocol set to UART.");
+        } else if (strcmp(s_serialBuf, "SETSPI") == 0) {
+          s_selectedProtocol = PROTO_SPI;
+          spi_fuzzer_init();
+          Serial.println("Protocol set to SPI. SPI bus initialized.");
+        } else if (strcmp(s_serialBuf, "SETI2C") == 0) {
+          s_selectedProtocol = PROTO_I2C;
+          i2c_fuzzer_init();
+          Serial.println("Protocol set to I2C. I2C bus initialized.");
         } else if (strcmp(s_serialBuf, "SIMFAIL") == 0) {
           Serial.println("DEBUG: Simulating heartbeat timeout failure...");
           static TestcaseMeta fakeTC;

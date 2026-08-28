@@ -50,6 +50,10 @@ void oled_ui_update(void);
 void oled_ui_toggle(void);
 bool oled_ui_is_on(void);
 
+// Sleep/wake OLED (for I2C bus sharing)
+void oled_ui_sleep(void);
+void oled_ui_wake(void);
+
 // Force immediate redraw (e.g., after state change)
 void oled_ui_redraw(void);
 

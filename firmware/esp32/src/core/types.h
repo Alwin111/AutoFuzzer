@@ -28,9 +28,9 @@ namespace Pin {
   constexpr int SpiMosi   = 23;
   constexpr int SpiCs     = 5;
 
-  // I2C (shared with OLED — note bus contention when fuzzing I2C)
-  constexpr int I2cSda    = 21;
-  constexpr int I2cScl    = 22;
+  // I2C fuzzing bus (SHARED with OLED — OLED disabled during I2C fuzzing)
+  constexpr int I2cSda    = 21;  // Shared with OLED SDA
+  constexpr int I2cScl    = 22;  // Shared with OLED SCL
 
   // LEDs
   constexpr int LedPass   = 2;   // Green — DUT healthy
@@ -95,6 +95,15 @@ namespace Proto {
   // DUT response frame size
   constexpr uint8_t UartRespSize = 4;  // ACK_SYNC + SEQ_LO + SEQ_HI + STATUS
 
+  // I2C constants
+  constexpr uint8_t  I2cDefaultAddr    = 0x10;  // Default DUT I2C address
+  constexpr uint8_t  I2cMaxPayload     = 32;    // Max payload bytes per transaction
+  constexpr uint32_t I2cTimeoutMs      = 50;    // I2C transaction timeout
+  // I2C response codes from Wire.endTransmission()
+  constexpr uint8_t  I2cRespSuccess    = 0;  // ACK received
+  constexpr uint8_t  I2cRespNackAddr   = 2;  // NACK on address
+  constexpr uint8_t  I2cRespNackData   = 3;  // NACK on data
+  constexpr uint8_t  I2cRespError      = 4;  // Other error
   // Timing
   constexpr uint32_t HeartbeatTimeoutMs = 350;
   constexpr uint32_t UartRespTimeoutMs  = 100;
