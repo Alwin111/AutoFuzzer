@@ -1,0 +1,36 @@
+==================================================
+AUTOFUZZER TEST REPORT — TEST_015
+==================================================
+Date:          2026-09-03 08:55:00
+Target:        STM32 Nucleo-F446RE
+Protocol:      UART @ 115200 baud
+Profile:       QUICK 30s
+Duration:      28552 ms
+
+PACKETS
+  Sent: 143  ACKs: 4  NACKs: 11  Failures: 1
+
+ROBUSTNESS SCORE: 63/100
+VERDICT: FAIL
+
+SCORE BREAKDOWN
+  Communication             PASS
+  Boundary Handling         FAIL
+  Malformed Input           FAIL
+  Recovery                  FAIL
+  Heartbeat                 FAIL
+  Random Input              FAIL
+
+FAILURE DETAILS
+  Type: PROTOCOL_ERROR
+  Mutation: BAD_CRC
+  Sequence: #121
+  Phase: RANDOM
+  Heartbeat Timeout: 598 ms
+  Suspected: Checksum validation failure causes parser state corruption
+  Minimal: 26 bytes
+  Replay: 3/3 FAILED — REPRODUCIBLE
+  Packet: A5 06 19 C3 97 8D A5 E8 0B 34 A6 67 9E 38 2A 90 F2 32 C4 29 40 AA F2 95 F9 9D
+
+SEED: 53309 | CAMPAIGN SEED: 174299
+==================================================

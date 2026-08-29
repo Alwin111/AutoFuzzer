@@ -1,0 +1,36 @@
+==================================================
+AUTOFUZZER TEST REPORT — TEST_039
+==================================================
+Date:          2026-09-07 19:10:00
+Target:        Arduino Nano (CH340)
+Protocol:      UART @ 9600 baud
+Profile:       STANDARD 1min
+Duration:      61312 ms
+
+PACKETS
+  Sent: 155  ACKs: 5  NACKs: 13  Failures: 1
+
+ROBUSTNESS SCORE: 72/100
+VERDICT: FAIL
+
+SCORE BREAKDOWN
+  Communication             PASS
+  Boundary Handling         FAIL
+  Malformed Input           FAIL
+  Recovery                  FAIL
+  Heartbeat                 FAIL
+  Random Input              FAIL
+
+FAILURE DETAILS
+  Type: HEARTBEAT_TIMEOUT
+  Mutation: OVERLENGTH
+  Sequence: #150
+  Phase: MALFORMED
+  Heartbeat Timeout: 638 ms
+  Suspected: Parser length-handling vulnerability — oversized payload causes DUT parser lockup
+  Minimal: 16 bytes
+  Replay: 2/3 FAILED — INTERMITTENT
+  Packet: A5 0D 3A 48 65 66 5D 82 88 47 7F B9 83 B2 D9 6E
+
+SEED: 71261 | CAMPAIGN SEED: 233827
+==================================================

@@ -1,0 +1,25 @@
+==================================================
+AUTOFUZZER TEST REPORT — TEST_007
+==================================================
+Date:          2026-08-26 11:43:00
+Target:        STM32 Nucleo-F446RE
+Protocol:      UART @ 115200 baud
+Profile:       DEEP 5min
+Duration:      302562 ms
+
+PACKETS
+  Sent: 593  ACKs: 13  NACKs: 7  Failures: 0
+
+ROBUSTNESS SCORE: 79/100
+VERDICT: PASS
+
+SCORE BREAKDOWN
+  Communication             PASS
+  Boundary Handling         PASS
+  Malformed Input           PASS
+  Recovery                  PASS
+  Heartbeat                 PASS
+  Random Input              PASS
+
+SEED: 52504 | CAMPAIGN SEED: 983794
+==================================================

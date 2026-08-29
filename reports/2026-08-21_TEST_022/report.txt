@@ -1,0 +1,25 @@
+==================================================
+AUTOFUZZER TEST REPORT — TEST_022
+==================================================
+Date:          2026-08-21 12:59:00
+Target:        Arduino Nano (CH340)
+Protocol:      UART @ 9600 baud
+Profile:       DEEP 5min
+Duration:      302543 ms
+
+PACKETS
+  Sent: 649  ACKs: 18  NACKs: 8  Failures: 0
+
+ROBUSTNESS SCORE: 81/100
+VERDICT: PASS
+
+SCORE BREAKDOWN
+  Communication             PASS
+  Boundary Handling         PASS
+  Malformed Input           PASS
+  Recovery                  PASS
+  Heartbeat                 PASS
+  Random Input              PASS
+
+SEED: 96951 | CAMPAIGN SEED: 208618
+==================================================

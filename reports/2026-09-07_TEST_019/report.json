@@ -1,0 +1,53 @@
+{
+  "report_id": "TEST_019",
+  "date": "2026-09-07",
+  "time": "09:54:00",
+  "target": "STM32 Nucleo-F446RE",
+  "protocol": "UART",
+  "baud": 115200,
+  "profile": "QUICK 30s",
+  "duration_ms": 32160,
+  "total_packets": 230,
+  "acks": 36,
+  "nacks": 7,
+  "failures": 1,
+  "verdict": "FAIL",
+  "robustness_score": 64,
+  "score_breakdown": {
+    "communication": "PASS",
+    "boundary_handling": "PASS",
+    "malformed_input": "FAIL",
+    "recovery": "FAIL",
+    "heartbeat": "FAIL",
+    "random_input": "FAIL"
+  },
+  "failure": {
+    "type": "HEARTBEAT_TIMEOUT",
+    "mutation": "OVERLENGTH",
+    "sequence": 222,
+    "phase": "FREEFORM",
+    "heartbeat_timeout_ms": 470,
+    "suspected_root_cause": "Parser length-handling vulnerability \u2014 oversized payload causes DUT parser lockup",
+    "failing_packet": {
+      "hex": "A5 0B 39 7D 41 DB 5A 88 B1 87 26 E4 86 09 BE 14 08 BB C2 D2 FC 59 54 FE E7 36 5B 9F 91 C0 56 39 91 0B FD FB 28 94 B1 00 52 6A 24 89 6B",
+      "length": 63,
+      "minimal_length": 45
+    },
+    "replay": {
+      "attempts": 3,
+      "failures": 3,
+      "result": "REPRODUCIBLE"
+    }
+  },
+  "seed": 34356,
+  "campaign_seed": 171849,
+  "mutation_distribution": {
+    "VALID": 22,
+    "EMPTY": 5,
+    "MAX_LEN": 16,
+    "OVERLENGTH": 24,
+    "BAD_CRC": 21,
+    "TRUNCATED": 21,
+    "RANDOM": 19
+  }
+}

@@ -1,0 +1,36 @@
+{
+  "report_id": "TEST_027",
+  "date": "2026-08-26",
+  "time": "20:44:00",
+  "target": "Arduino Nano (CH340)",
+  "protocol": "UART",
+  "baud": 9600,
+  "profile": "STANDARD 1min",
+  "duration_ms": 59304,
+  "total_packets": 646,
+  "acks": 12,
+  "nacks": 27,
+  "failures": 0,
+  "verdict": "PASS",
+  "robustness_score": 93,
+  "score_breakdown": {
+    "communication": "PASS",
+    "boundary_handling": "PASS",
+    "malformed_input": "PASS",
+    "recovery": "PASS",
+    "heartbeat": "PASS",
+    "random_input": "PASS"
+  },
+  "failure": null,
+  "seed": 24168,
+  "campaign_seed": 501124,
+  "mutation_distribution": {
+    "VALID": 10,
+    "EMPTY": 9,
+    "MAX_LEN": 17,
+    "OVERLENGTH": 14,
+    "BAD_CRC": 12,
+    "TRUNCATED": 10,
+    "RANDOM": 10
+  }
+}

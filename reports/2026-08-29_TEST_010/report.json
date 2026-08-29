@@ -1,0 +1,36 @@
+{
+  "report_id": "TEST_010",
+  "date": "2026-08-29",
+  "time": "17:29:00",
+  "target": "STM32 Nucleo-F446RE",
+  "protocol": "UART",
+  "baud": 115200,
+  "profile": "STANDARD 1min",
+  "duration_ms": 61126,
+  "total_packets": 483,
+  "acks": 10,
+  "nacks": 21,
+  "failures": 0,
+  "verdict": "PASS",
+  "robustness_score": 81,
+  "score_breakdown": {
+    "communication": "PASS",
+    "boundary_handling": "PASS",
+    "malformed_input": "PASS",
+    "recovery": "PASS",
+    "heartbeat": "PASS",
+    "random_input": "PASS"
+  },
+  "failure": null,
+  "seed": 79352,
+  "campaign_seed": 363626,
+  "mutation_distribution": {
+    "VALID": 24,
+    "EMPTY": 20,
+    "MAX_LEN": 11,
+    "OVERLENGTH": 23,
+    "BAD_CRC": 13,
+    "TRUNCATED": 6,
+    "RANDOM": 12
+  }
+}

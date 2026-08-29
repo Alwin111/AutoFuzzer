@@ -1,0 +1,36 @@
+==================================================
+AUTOFUZZER TEST REPORT — TEST_037
+==================================================
+Date:          2026-09-05 13:20:00
+Target:        Arduino Nano (CH340)
+Protocol:      UART @ 9600 baud
+Profile:       QUICK 30s
+Duration:      30225 ms
+
+PACKETS
+  Sent: 97  ACKs: 22  NACKs: 3  Failures: 1
+
+ROBUSTNESS SCORE: 58/100
+VERDICT: FAIL
+
+SCORE BREAKDOWN
+  Communication             PASS
+  Boundary Handling         FAIL
+  Malformed Input           FAIL
+  Recovery                  FAIL
+  Heartbeat                 FAIL
+  Random Input              FAIL
+
+FAILURE DETAILS
+  Type: PROTOCOL_ERROR
+  Mutation: BAD_CRC
+  Sequence: #88
+  Phase: BOUNDARY
+  Heartbeat Timeout: 546 ms
+  Suspected: Checksum validation failure causes parser state corruption
+  Minimal: 10 bytes
+  Replay: 2/3 FAILED — INTERMITTENT
+  Packet: A5 03 1F 9E B8 C9 71 21 8D 69
+
+SEED: 80798 | CAMPAIGN SEED: 184491
+==================================================

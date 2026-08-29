@@ -1,0 +1,53 @@
+{
+  "report_id": "TEST_020",
+  "date": "2026-09-08",
+  "time": "11:42:00",
+  "target": "STM32 Nucleo-F446RE",
+  "protocol": "UART",
+  "baud": 115200,
+  "profile": "STANDARD 1min",
+  "duration_ms": 60136,
+  "total_packets": 165,
+  "acks": 29,
+  "nacks": 10,
+  "failures": 1,
+  "verdict": "FAIL",
+  "robustness_score": 45,
+  "score_breakdown": {
+    "communication": "PASS",
+    "boundary_handling": "FAIL",
+    "malformed_input": "FAIL",
+    "recovery": "FAIL",
+    "heartbeat": "FAIL",
+    "random_input": "FAIL"
+  },
+  "failure": {
+    "type": "COMMUNICATION_FAILURE",
+    "mutation": "TRUNCATED",
+    "sequence": 151,
+    "phase": "BOUNDARY",
+    "heartbeat_timeout_ms": 693,
+    "suspected_root_cause": "Incomplete frame handling \u2014 parser waits for remaining bytes indefinitely",
+    "failing_packet": {
+      "hex": "A5 0C 0D 82 35 66 AE 0A C8",
+      "length": 19,
+      "minimal_length": 9
+    },
+    "replay": {
+      "attempts": 3,
+      "failures": 2,
+      "result": "INTERMITTENT"
+    }
+  },
+  "seed": 51180,
+  "campaign_seed": 350280,
+  "mutation_distribution": {
+    "VALID": 22,
+    "EMPTY": 21,
+    "MAX_LEN": 6,
+    "OVERLENGTH": 5,
+    "BAD_CRC": 20,
+    "TRUNCATED": 9,
+    "RANDOM": 19
+  }
+}

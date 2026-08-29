@@ -1,0 +1,53 @@
+{
+  "report_id": "TEST_038",
+  "date": "2026-09-06",
+  "time": "19:01:00",
+  "target": "Arduino Nano (CH340)",
+  "protocol": "UART",
+  "baud": 9600,
+  "profile": "STANDARD 1min",
+  "duration_ms": 62784,
+  "total_packets": 69,
+  "acks": 8,
+  "nacks": 5,
+  "failures": 1,
+  "verdict": "FAIL",
+  "robustness_score": 62,
+  "score_breakdown": {
+    "communication": "PASS",
+    "boundary_handling": "PASS",
+    "malformed_input": "FAIL",
+    "recovery": "FAIL",
+    "heartbeat": "FAIL",
+    "random_input": "FAIL"
+  },
+  "failure": {
+    "type": "HEARTBEAT_TIMEOUT",
+    "mutation": "RANDOM",
+    "sequence": 51,
+    "phase": "OVERLENGTH",
+    "heartbeat_timeout_ms": 502,
+    "suspected_root_cause": "Random payload triggers unhandled code path in command parser",
+    "failing_packet": {
+      "hex": "A5 02 1D 72 AE AD 37 3D 2F 96 5E 6F D4 B2 79 8C E1 92 63 84 B0 D9 34 A2 7D AE A2 31 E0 06 9E",
+      "length": 35,
+      "minimal_length": 31
+    },
+    "replay": {
+      "attempts": 3,
+      "failures": 3,
+      "result": "REPRODUCIBLE"
+    }
+  },
+  "seed": 85456,
+  "campaign_seed": 498858,
+  "mutation_distribution": {
+    "VALID": 18,
+    "EMPTY": 10,
+    "MAX_LEN": 11,
+    "OVERLENGTH": 16,
+    "BAD_CRC": 18,
+    "TRUNCATED": 3,
+    "RANDOM": 15
+  }
+}

@@ -1,0 +1,36 @@
+==================================================
+AUTOFUZZER TEST REPORT — TEST_014
+==================================================
+Date:          2026-09-02 19:19:00
+Target:        STM32 Nucleo-F446RE
+Protocol:      UART @ 115200 baud
+Profile:       DEEP 5min
+Duration:      299647 ms
+
+PACKETS
+  Sent: 174  ACKs: 14  NACKs: 2  Failures: 1
+
+ROBUSTNESS SCORE: 45/100
+VERDICT: FAIL
+
+SCORE BREAKDOWN
+  Communication             PASS
+  Boundary Handling         PASS
+  Malformed Input           FAIL
+  Recovery                  FAIL
+  Heartbeat                 FAIL
+  Random Input              FAIL
+
+FAILURE DETAILS
+  Type: COMMUNICATION_FAILURE
+  Mutation: TRUNCATED
+  Sequence: #162
+  Phase: MALFORMED
+  Heartbeat Timeout: 581 ms
+  Suspected: Incomplete frame handling — parser waits for remaining bytes indefinitely
+  Minimal: 9 bytes
+  Replay: 3/3 FAILED — REPRODUCIBLE
+  Packet: A5 06 06 B4 3E 17 E7 E7 40
+
+SEED: 62296 | CAMPAIGN SEED: 804314
+==================================================

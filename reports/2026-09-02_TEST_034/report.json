@@ -1,0 +1,53 @@
+{
+  "report_id": "TEST_034",
+  "date": "2026-09-02",
+  "time": "11:51:00",
+  "target": "Arduino Nano (CH340)",
+  "protocol": "UART",
+  "baud": 9600,
+  "profile": "QUICK 30s",
+  "duration_ms": 30542,
+  "total_packets": 90,
+  "acks": 2,
+  "nacks": 3,
+  "failures": 1,
+  "verdict": "FAIL",
+  "robustness_score": 65,
+  "score_breakdown": {
+    "communication": "PASS",
+    "boundary_handling": "PASS",
+    "malformed_input": "FAIL",
+    "recovery": "FAIL",
+    "heartbeat": "FAIL",
+    "random_input": "FAIL"
+  },
+  "failure": {
+    "type": "HEARTBEAT_TIMEOUT",
+    "mutation": "OVERLENGTH",
+    "sequence": 61,
+    "phase": "BOUNDARY",
+    "heartbeat_timeout_ms": 593,
+    "suspected_root_cause": "Parser length-handling vulnerability \u2014 oversized payload causes DUT parser lockup",
+    "failing_packet": {
+      "hex": "A5 02 2C 77 B5 3A C9 94 ED A9 57 E6 31 1A D8 80 60 1C 0F 05 D2 6D 6D 4D 08 0F DD 00 56 DC 2A 3C 73 4C",
+      "length": 50,
+      "minimal_length": 34
+    },
+    "replay": {
+      "attempts": 3,
+      "failures": 2,
+      "result": "INTERMITTENT"
+    }
+  },
+  "seed": 36100,
+  "campaign_seed": 254511,
+  "mutation_distribution": {
+    "VALID": 25,
+    "EMPTY": 25,
+    "MAX_LEN": 15,
+    "OVERLENGTH": 18,
+    "BAD_CRC": 15,
+    "TRUNCATED": 10,
+    "RANDOM": 7
+  }
+}

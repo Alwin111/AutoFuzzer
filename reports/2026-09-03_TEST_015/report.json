@@ -1,0 +1,53 @@
+{
+  "report_id": "TEST_015",
+  "date": "2026-09-03",
+  "time": "08:55:00",
+  "target": "STM32 Nucleo-F446RE",
+  "protocol": "UART",
+  "baud": 115200,
+  "profile": "QUICK 30s",
+  "duration_ms": 28552,
+  "total_packets": 143,
+  "acks": 4,
+  "nacks": 11,
+  "failures": 1,
+  "verdict": "FAIL",
+  "robustness_score": 63,
+  "score_breakdown": {
+    "communication": "PASS",
+    "boundary_handling": "FAIL",
+    "malformed_input": "FAIL",
+    "recovery": "FAIL",
+    "heartbeat": "FAIL",
+    "random_input": "FAIL"
+  },
+  "failure": {
+    "type": "PROTOCOL_ERROR",
+    "mutation": "BAD_CRC",
+    "sequence": 121,
+    "phase": "RANDOM",
+    "heartbeat_timeout_ms": 598,
+    "suspected_root_cause": "Checksum validation failure causes parser state corruption",
+    "failing_packet": {
+      "hex": "A5 06 19 C3 97 8D A5 E8 0B 34 A6 67 9E 38 2A 90 F2 32 C4 29 40 AA F2 95 F9 9D",
+      "length": 31,
+      "minimal_length": 26
+    },
+    "replay": {
+      "attempts": 3,
+      "failures": 3,
+      "result": "REPRODUCIBLE"
+    }
+  },
+  "seed": 53309,
+  "campaign_seed": 174299,
+  "mutation_distribution": {
+    "VALID": 10,
+    "EMPTY": 18,
+    "MAX_LEN": 16,
+    "OVERLENGTH": 9,
+    "BAD_CRC": 6,
+    "TRUNCATED": 6,
+    "RANDOM": 24
+  }
+}

@@ -1,0 +1,36 @@
+==================================================
+AUTOFUZZER TEST REPORT — TEST_017
+==================================================
+Date:          2026-09-05 15:15:00
+Target:        STM32 Nucleo-F446RE
+Protocol:      UART @ 115200 baud
+Profile:       QUICK 30s
+Duration:      30281 ms
+
+PACKETS
+  Sent: 69  ACKs: 7  NACKs: 1  Failures: 1
+
+ROBUSTNESS SCORE: 60/100
+VERDICT: FAIL
+
+SCORE BREAKDOWN
+  Communication             PASS
+  Boundary Handling         FAIL
+  Malformed Input           FAIL
+  Recovery                  FAIL
+  Heartbeat                 FAIL
+  Random Input              FAIL
+
+FAILURE DETAILS
+  Type: HEARTBEAT_TIMEOUT
+  Mutation: OVERLENGTH
+  Sequence: #62
+  Phase: RANDOM
+  Heartbeat Timeout: 626 ms
+  Suspected: Parser length-handling vulnerability — oversized payload causes DUT parser lockup
+  Minimal: 34 bytes
+  Replay: 3/3 FAILED — REPRODUCIBLE
+  Packet: A5 09 31 8C 52 76 47 1E 9A A7 11 4C A0 9E 88 1B 26 9C 96 F2 56 A8 37 0F 5C A8 44 AD 22 56 80 B0 20 FB
+
+SEED: 19880 | CAMPAIGN SEED: 564656
+==================================================

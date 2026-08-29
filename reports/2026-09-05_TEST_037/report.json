@@ -1,0 +1,53 @@
+{
+  "report_id": "TEST_037",
+  "date": "2026-09-05",
+  "time": "13:20:00",
+  "target": "Arduino Nano (CH340)",
+  "protocol": "UART",
+  "baud": 9600,
+  "profile": "QUICK 30s",
+  "duration_ms": 30225,
+  "total_packets": 97,
+  "acks": 22,
+  "nacks": 3,
+  "failures": 1,
+  "verdict": "FAIL",
+  "robustness_score": 58,
+  "score_breakdown": {
+    "communication": "PASS",
+    "boundary_handling": "FAIL",
+    "malformed_input": "FAIL",
+    "recovery": "FAIL",
+    "heartbeat": "FAIL",
+    "random_input": "FAIL"
+  },
+  "failure": {
+    "type": "PROTOCOL_ERROR",
+    "mutation": "BAD_CRC",
+    "sequence": 88,
+    "phase": "BOUNDARY",
+    "heartbeat_timeout_ms": 546,
+    "suspected_root_cause": "Checksum validation failure causes parser state corruption",
+    "failing_packet": {
+      "hex": "A5 03 1F 9E B8 C9 71 21 8D 69",
+      "length": 37,
+      "minimal_length": 10
+    },
+    "replay": {
+      "attempts": 3,
+      "failures": 2,
+      "result": "INTERMITTENT"
+    }
+  },
+  "seed": 80798,
+  "campaign_seed": 184491,
+  "mutation_distribution": {
+    "VALID": 13,
+    "EMPTY": 20,
+    "MAX_LEN": 17,
+    "OVERLENGTH": 16,
+    "BAD_CRC": 4,
+    "TRUNCATED": 9,
+    "RANDOM": 16
+  }
+}
