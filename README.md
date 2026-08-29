@@ -26,6 +26,12 @@ AutoFuzzer connected to an Arduino Nano clone for UART fuzzing over SoftwareSeri
 
 ![ESP32 testing Arduino Nano](docs/images/test-arduino-nano.png)
 
+### Circuit Diagram
+
+Full wiring schematic showing ESP32, OLED, LEDs, buttons, buzzer, LiPo battery, charging module, and logic analyzer connections.
+
+![Circuit Diagram](docs/images/circuit-diagram.png)
+
 ### Test Results — Serial Monitor Output
 
 UART quick test completed — 258 packets across 7 mutation phases, 14 NACKs, 0 failures, robustness score 75/100.
