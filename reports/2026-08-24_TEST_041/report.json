@@ -1,0 +1,53 @@
+{
+  "report_id": "TEST_041",
+  "date": "2026-08-24",
+  "time": "21:33:00",
+  "target": "ESP32 DevKit V1",
+  "protocol": "UART",
+  "baud": 115200,
+  "profile": "STANDARD 1min",
+  "duration_ms": 58679,
+  "total_packets": 176,
+  "acks": 17,
+  "nacks": 17,
+  "failures": 1,
+  "verdict": "FAIL",
+  "robustness_score": 58,
+  "score_breakdown": {
+    "communication": "PASS",
+    "boundary_handling": "PASS",
+    "malformed_input": "FAIL",
+    "recovery": "FAIL",
+    "heartbeat": "FAIL",
+    "random_input": "FAIL"
+  },
+  "failure": {
+    "type": "HEARTBEAT_TIMEOUT",
+    "mutation": "OVERLENGTH",
+    "sequence": 170,
+    "phase": "OVERLENGTH",
+    "heartbeat_timeout_ms": 511,
+    "suspected_root_cause": "Parser length-handling vulnerability \u2014 oversized payload causes DUT parser lockup",
+    "failing_packet": {
+      "hex": "A5 0C 36 7E 57 E7 49 4F",
+      "length": 60,
+      "minimal_length": 8
+    },
+    "replay": {
+      "attempts": 3,
+      "failures": 3,
+      "result": "REPRODUCIBLE"
+    }
+  },
+  "seed": 98785,
+  "campaign_seed": 912094,
+  "mutation_distribution": {
+    "VALID": 20,
+    "EMPTY": 5,
+    "MAX_LEN": 17,
+    "OVERLENGTH": 19,
+    "BAD_CRC": 9,
+    "TRUNCATED": 22,
+    "RANDOM": 17
+  }
+}

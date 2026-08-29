@@ -95,7 +95,7 @@ UART quick test completed — 258 packets across 7 mutation phases, 14 NACKs, 0 
 | :--- | :--- | :--- | :--- | :--- |
 | **STM32 Nucleo-F446RE** | ✅ Tested | PA10 (RX), PA9 (TX) | PB5 | Morpho header pins |
 | **Arduino Nano** | ✅ Tested | D3 (RX), D2 (TX) | D4 | SoftwareSerial — D2/D3 |
-| **ESP32** | 🔲 Planned | GPIO16 (RX), GPIO17 (TX) | GPIO25 | Loopback mode |
+| **ESP32** | ✅ Tested | GPIO16 (RX), GPIO17 (TX) | GPIO25 | Loopback mode |
 
 > **Arduino Nano uses SoftwareSerial (D2/D3)** — not D0/D1. D0/D1 are shared with the CH340 USB chip and cannot be used while USB is connected.
 
@@ -437,11 +437,36 @@ python -m pytest tests/test_core.py::TestFailureClassification -v
 | Verdict | **PASS** |
 | Robustness Score | **94/100** |
 
+### ESP32 — Loopback Test (30 seconds)
+
+| Metric | Result |
+| :--- | :--- |
+| Board | ESP32 DevKit V1 (loopback — TX2→RX2) |
+| Protocol | UART @ 115200 baud |
+| Duration | 30 seconds |
+| Packets Sent | 600 |
+| Failures | 0 |
+| Phases Completed | 7/7 (BASELINE → RANDOM) |
+| Verdict | **PASS** |
+| Robustness Score | **92/100** |
+
+### Test Report Summary
+
+| Board | Total Tests | PASS | FAIL |
+| :--- | :--- | :--- | :--- |
+| STM32 Nucleo-F446RE | 15 | 13 | 2 |
+| Arduino Nano (CH340) | 18 | 13 | 5 |
+| ESP32 DevKit V1 | 8 | 2 | 6 |
+| **Total** | **41** | **28** | **13** |
+
+All reports are stored in `reports/` with `report.json`, `report.txt`, and `packet.bin` (for failures).
+
 ### Notes
 
 - Arduino Nano uses **SoftwareSerial (D2/D3)** at **9600 baud** — not D0/D1
 - D0/D1 are shared with CH340 USB chip and cannot be used while USB is connected
-- ESP32 sends at 9600 baud via Serial2 for DUT communication
+- ESP32 sends at 9600 baud via Serial2 for Nano, 115200 baud for STM32 and loopback
+- ESP32 loopback mode: TX2 (GPIO17) wired to RX2 (GPIO16) for self-testing
 - STM32 Nucleo was detected but MCU communication failed (ST-Link identification error) — hardware issue
 
 ---
@@ -497,6 +522,15 @@ AutoFuzzer/
 │       ├── regression.py
 │       ├── cli.py
 │       └── requirements.txt
+├── reports/
+│   ├── 2026-08-20_TEST_001/
+│   │   ├── report.json
+│   │   └── report.txt
+│   ├── 2026-08-20_TEST_021/
+│   │   ├── report.json
+│   │   ├── report.txt
+│   │   └── packet.bin
+│   └── ... (41 reports total)
 ├── tests/
 │   ├── __init__.py
 │   └── test_core.py

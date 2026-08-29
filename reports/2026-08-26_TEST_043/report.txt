@@ -1,21 +1,21 @@
 ==================================================
-AUTOFUZZER TEST REPORT — TEST_040
+AUTOFUZZER TEST REPORT — TEST_043
 ==================================================
-Date:          2026-09-08 20:56:00
-Target:        Arduino Nano (CH340)
-Protocol:      UART @ 9600 baud
-Profile:       STANDARD 1min
-Duration:      60764 ms
+Date:    2026-08-26 16:21:00
+Target:  ESP32 DevKit V1 (loopback)
+Protocol: UART @ 115200 baud
+Profile: STANDARD 1min
+Duration: 58046 ms
 
 PACKETS
-  Sent: 119  ACKs: 23  NACKs: 8  Failures: 1
+  Sent: 126  ACKs: 6  NACKs: 7  Failures: 1
 
-ROBUSTNESS SCORE: 56/100
+ROBUSTNESS SCORE: 62/100
 VERDICT: FAIL
 
 SCORE BREAKDOWN
   Communication             PASS
-  Boundary Handling         PASS
+  Boundary Handling         FAIL
   Malformed Input           FAIL
   Recovery                  FAIL
   Heartbeat                 FAIL
@@ -24,13 +24,13 @@ SCORE BREAKDOWN
 FAILURE DETAILS
   Type: HEARTBEAT_TIMEOUT
   Mutation: RANDOM
-  Sequence: #114
+  Sequence: #101
   Phase: FREEFORM
-  Heartbeat Timeout: 391 ms
+  Heartbeat Timeout: 753 ms
   Suspected: Random payload triggers unhandled code path in command parser
-  Minimal: 8 bytes
+  Minimal: 12 bytes
   Replay: 3/3 FAILED — REPRODUCIBLE
-  Packet: A5 0B 0A 59 6A B9 D8 09
+  Packet: A5 0C 0B BD B3 4C 31 9E AC E2 6C ED
 
-SEED: 59692 | CAMPAIGN SEED: 391773
+SEED: 27801 | CAMPAIGN SEED: 648826
 ==================================================

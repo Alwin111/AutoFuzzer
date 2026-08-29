@@ -1,18 +1,18 @@
 {
-  "report_id": "TEST_017",
-  "date": "2026-09-05",
-  "time": "15:15:00",
-  "target": "STM32 Nucleo-F446RE",
+  "report_id": "TEST_045",
+  "date": "2026-08-28",
+  "time": "14:00:00",
+  "target": "ESP32 DevKit V1",
   "protocol": "UART",
   "baud": 115200,
   "profile": "QUICK 30s",
-  "duration_ms": 30281,
-  "total_packets": 69,
-  "acks": 7,
-  "nacks": 1,
+  "duration_ms": 32106,
+  "total_packets": 153,
+  "acks": 21,
+  "nacks": 13,
   "failures": 1,
   "verdict": "FAIL",
-  "robustness_score": 60,
+  "robustness_score": 57,
   "score_breakdown": {
     "communication": "PASS",
     "boundary_handling": "FAIL",
@@ -24,14 +24,14 @@
   "failure": {
     "type": "HEARTBEAT_TIMEOUT",
     "mutation": "OVERLENGTH",
-    "sequence": 62,
-    "phase": "RANDOM",
-    "heartbeat_timeout_ms": 626,
+    "sequence": 136,
+    "phase": "CHECKSUM",
+    "heartbeat_timeout_ms": 460,
     "suspected_root_cause": "Parser length-handling vulnerability \u2014 oversized payload causes DUT parser lockup",
     "failing_packet": {
-      "hex": "A5 09 31 8C 52 76 47 1E 9A A7 11 4C A0 9E 88 1B 26 9C 96 F2 56 A8 37 0F 5C A8 44 AD 22 56 80 B0 20 FB",
-      "length": 55,
-      "minimal_length": 34
+      "hex": "A5 0E 3F 62 E0 F5 1F E5 AD 51 1F 12 4D D9 62 96 98 F5 57 94 2C 00 A6 1C 3F 3D 0B 22 B7 9E 1F 3E 3D FD 0A 7B E6 66 4F AA 02 6F 1A 7F 5A 4F E1 8E CF 90 24 05 07 6D CF 8E F5 72 8B",
+      "length": 69,
+      "minimal_length": 59
     },
     "replay": {
       "attempts": 3,
@@ -39,15 +39,15 @@
       "result": "REPRODUCIBLE"
     }
   },
-  "seed": 19880,
-  "campaign_seed": 564656,
+  "seed": 86767,
+  "campaign_seed": 972995,
   "mutation_distribution": {
-    "VALID": 9,
-    "EMPTY": 15,
-    "MAX_LEN": 4,
+    "VALID": 14,
+    "EMPTY": 20,
+    "MAX_LEN": 5,
     "OVERLENGTH": 8,
-    "BAD_CRC": 15,
-    "TRUNCATED": 3,
+    "BAD_CRC": 4,
+    "TRUNCATED": 14,
     "RANDOM": 15
   }
 }

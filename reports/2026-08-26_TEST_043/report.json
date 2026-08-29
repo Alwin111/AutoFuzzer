@@ -1,21 +1,21 @@
 {
-  "report_id": "TEST_040",
-  "date": "2026-09-08",
-  "time": "20:56:00",
-  "target": "Arduino Nano (CH340)",
+  "report_id": "TEST_043",
+  "date": "2026-08-26",
+  "time": "16:21:00",
+  "target": "ESP32 DevKit V1",
   "protocol": "UART",
-  "baud": 9600,
+  "baud": 115200,
   "profile": "STANDARD 1min",
-  "duration_ms": 60764,
-  "total_packets": 119,
-  "acks": 23,
-  "nacks": 8,
+  "duration_ms": 58046,
+  "total_packets": 126,
+  "acks": 6,
+  "nacks": 7,
   "failures": 1,
   "verdict": "FAIL",
-  "robustness_score": 56,
+  "robustness_score": 62,
   "score_breakdown": {
     "communication": "PASS",
-    "boundary_handling": "PASS",
+    "boundary_handling": "FAIL",
     "malformed_input": "FAIL",
     "recovery": "FAIL",
     "heartbeat": "FAIL",
@@ -24,14 +24,14 @@
   "failure": {
     "type": "HEARTBEAT_TIMEOUT",
     "mutation": "RANDOM",
-    "sequence": 114,
+    "sequence": 101,
     "phase": "FREEFORM",
-    "heartbeat_timeout_ms": 391,
+    "heartbeat_timeout_ms": 753,
     "suspected_root_cause": "Random payload triggers unhandled code path in command parser",
     "failing_packet": {
-      "hex": "A5 0B 0A 59 6A B9 D8 09",
-      "length": 16,
-      "minimal_length": 8
+      "hex": "A5 0C 0B BD B3 4C 31 9E AC E2 6C ED",
+      "length": 17,
+      "minimal_length": 12
     },
     "replay": {
       "attempts": 3,
@@ -39,15 +39,15 @@
       "result": "REPRODUCIBLE"
     }
   },
-  "seed": 59692,
-  "campaign_seed": 391773,
+  "seed": 27801,
+  "campaign_seed": 648826,
   "mutation_distribution": {
-    "VALID": 23,
-    "EMPTY": 5,
-    "MAX_LEN": 23,
-    "OVERLENGTH": 4,
-    "BAD_CRC": 3,
-    "TRUNCATED": 10,
-    "RANDOM": 9
+    "VALID": 7,
+    "EMPTY": 14,
+    "MAX_LEN": 25,
+    "OVERLENGTH": 18,
+    "BAD_CRC": 4,
+    "TRUNCATED": 7,
+    "RANDOM": 25
   }
 }

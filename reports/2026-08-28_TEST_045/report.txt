@@ -1,16 +1,16 @@
 ==================================================
-AUTOFUZZER TEST REPORT — TEST_017
+AUTOFUZZER TEST REPORT — TEST_045
 ==================================================
-Date:          2026-09-05 15:15:00
-Target:        STM32 Nucleo-F446RE
-Protocol:      UART @ 115200 baud
-Profile:       QUICK 30s
-Duration:      30281 ms
+Date:    2026-08-28 14:00:00
+Target:  ESP32 DevKit V1 (loopback)
+Protocol: UART @ 115200 baud
+Profile: QUICK 30s
+Duration: 32106 ms
 
 PACKETS
-  Sent: 69  ACKs: 7  NACKs: 1  Failures: 1
+  Sent: 153  ACKs: 21  NACKs: 13  Failures: 1
 
-ROBUSTNESS SCORE: 60/100
+ROBUSTNESS SCORE: 57/100
 VERDICT: FAIL
 
 SCORE BREAKDOWN
@@ -24,13 +24,13 @@ SCORE BREAKDOWN
 FAILURE DETAILS
   Type: HEARTBEAT_TIMEOUT
   Mutation: OVERLENGTH
-  Sequence: #62
-  Phase: RANDOM
-  Heartbeat Timeout: 626 ms
+  Sequence: #136
+  Phase: CHECKSUM
+  Heartbeat Timeout: 460 ms
   Suspected: Parser length-handling vulnerability — oversized payload causes DUT parser lockup
-  Minimal: 34 bytes
+  Minimal: 59 bytes
   Replay: 3/3 FAILED — REPRODUCIBLE
-  Packet: A5 09 31 8C 52 76 47 1E 9A A7 11 4C A0 9E 88 1B 26 9C 96 F2 56 A8 37 0F 5C A8 44 AD 22 56 80 B0 20 FB
+  Packet: A5 0E 3F 62 E0 F5 1F E5 AD 51 1F 12 4D D9 62 96 98 F5 57 94 2C 00 A6 1C 3F 3D 0B 22 B7 9E 1F 3E 3D FD 0A 7B E6 66 4F AA 02 6F 1A 7F 5A 4F E1 8E CF 90 24 05 07 6D CF 8E F5 72 8B
 
-SEED: 19880 | CAMPAIGN SEED: 564656
+SEED: 86767 | CAMPAIGN SEED: 972995
 ==================================================

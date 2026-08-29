@@ -1,16 +1,16 @@
 ==================================================
-AUTOFUZZER TEST REPORT — TEST_020
+AUTOFUZZER TEST REPORT — TEST_046
 ==================================================
-Date:          2026-09-08 11:42:00
-Target:        STM32 Nucleo-F446RE
-Protocol:      UART @ 115200 baud
-Profile:       STANDARD 1min
-Duration:      60136 ms
+Date:    2026-08-29 14:54:00
+Target:  ESP32 DevKit V1 (loopback)
+Protocol: UART @ 115200 baud
+Profile: STANDARD 1min
+Duration: 59885 ms
 
 PACKETS
-  Sent: 165  ACKs: 29  NACKs: 10  Failures: 1
+  Sent: 105  ACKs: 10  NACKs: 3  Failures: 1
 
-ROBUSTNESS SCORE: 45/100
+ROBUSTNESS SCORE: 57/100
 VERDICT: FAIL
 
 SCORE BREAKDOWN
@@ -24,13 +24,13 @@ SCORE BREAKDOWN
 FAILURE DETAILS
   Type: COMMUNICATION_FAILURE
   Mutation: TRUNCATED
-  Sequence: #151
-  Phase: BOUNDARY
-  Heartbeat Timeout: 693 ms
+  Sequence: #77
+  Phase: CHECKSUM
+  Heartbeat Timeout: 797 ms
   Suspected: Incomplete frame handling — parser waits for remaining bytes indefinitely
   Minimal: 9 bytes
   Replay: 2/3 FAILED — INTERMITTENT
-  Packet: A5 0C 0D 82 35 66 AE 0A C8
+  Packet: A5 0F 08 F3 26 5E DB 9D 4C
 
-SEED: 51180 | CAMPAIGN SEED: 350280
+SEED: 95764 | CAMPAIGN SEED: 337026
 ==================================================

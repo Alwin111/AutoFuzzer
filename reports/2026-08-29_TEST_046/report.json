@@ -1,18 +1,18 @@
 {
-  "report_id": "TEST_020",
-  "date": "2026-09-08",
-  "time": "11:42:00",
-  "target": "STM32 Nucleo-F446RE",
+  "report_id": "TEST_046",
+  "date": "2026-08-29",
+  "time": "14:54:00",
+  "target": "ESP32 DevKit V1",
   "protocol": "UART",
   "baud": 115200,
   "profile": "STANDARD 1min",
-  "duration_ms": 60136,
-  "total_packets": 165,
-  "acks": 29,
-  "nacks": 10,
+  "duration_ms": 59885,
+  "total_packets": 105,
+  "acks": 10,
+  "nacks": 3,
   "failures": 1,
   "verdict": "FAIL",
-  "robustness_score": 45,
+  "robustness_score": 57,
   "score_breakdown": {
     "communication": "PASS",
     "boundary_handling": "FAIL",
@@ -24,13 +24,13 @@
   "failure": {
     "type": "COMMUNICATION_FAILURE",
     "mutation": "TRUNCATED",
-    "sequence": 151,
-    "phase": "BOUNDARY",
-    "heartbeat_timeout_ms": 693,
+    "sequence": 77,
+    "phase": "CHECKSUM",
+    "heartbeat_timeout_ms": 797,
     "suspected_root_cause": "Incomplete frame handling \u2014 parser waits for remaining bytes indefinitely",
     "failing_packet": {
-      "hex": "A5 0C 0D 82 35 66 AE 0A C8",
-      "length": 19,
+      "hex": "A5 0F 08 F3 26 5E DB 9D 4C",
+      "length": 14,
       "minimal_length": 9
     },
     "replay": {
@@ -39,15 +39,15 @@
       "result": "INTERMITTENT"
     }
   },
-  "seed": 51180,
-  "campaign_seed": 350280,
+  "seed": 95764,
+  "campaign_seed": 337026,
   "mutation_distribution": {
-    "VALID": 22,
-    "EMPTY": 21,
-    "MAX_LEN": 6,
-    "OVERLENGTH": 5,
-    "BAD_CRC": 20,
-    "TRUNCATED": 9,
-    "RANDOM": 19
+    "VALID": 5,
+    "EMPTY": 17,
+    "MAX_LEN": 16,
+    "OVERLENGTH": 11,
+    "BAD_CRC": 5,
+    "TRUNCATED": 19,
+    "RANDOM": 12
   }
 }

@@ -1,0 +1,36 @@
+{
+  "report_id": "TEST_039",
+  "date": "2026-08-22",
+  "time": "13:38:00",
+  "target": "ESP32 DevKit V1",
+  "protocol": "UART",
+  "baud": 115200,
+  "profile": "STANDARD 1min",
+  "duration_ms": 61119,
+  "total_packets": 327,
+  "acks": 18,
+  "nacks": 24,
+  "failures": 0,
+  "verdict": "PASS",
+  "robustness_score": 80,
+  "score_breakdown": {
+    "communication": "PASS",
+    "boundary_handling": "PASS",
+    "malformed_input": "PASS",
+    "recovery": "PASS",
+    "heartbeat": "PASS",
+    "random_input": "PASS"
+  },
+  "failure": null,
+  "seed": 33435,
+  "campaign_seed": 341447,
+  "mutation_distribution": {
+    "VALID": 11,
+    "EMPTY": 15,
+    "MAX_LEN": 19,
+    "OVERLENGTH": 24,
+    "BAD_CRC": 25,
+    "TRUNCATED": 20,
+    "RANDOM": 5
+  }
+}

@@ -1,21 +1,21 @@
 ==================================================
-AUTOFUZZER TEST REPORT — TEST_018
+AUTOFUZZER TEST REPORT — TEST_042
 ==================================================
-Date:          2026-09-06 12:27:00
-Target:        STM32 Nucleo-F446RE
-Protocol:      UART @ 115200 baud
-Profile:       STANDARD 1min
-Duration:      61727 ms
+Date:    2026-08-25 12:13:00
+Target:  ESP32 DevKit V1 (loopback)
+Protocol: UART @ 115200 baud
+Profile: QUICK 30s
+Duration: 30928 ms
 
 PACKETS
-  Sent: 95  ACKs: 18  NACKs: 8  Failures: 1
+  Sent: 228  ACKs: 11  NACKs: 1  Failures: 1
 
-ROBUSTNESS SCORE: 68/100
+ROBUSTNESS SCORE: 45/100
 VERDICT: FAIL
 
 SCORE BREAKDOWN
   Communication             PASS
-  Boundary Handling         FAIL
+  Boundary Handling         PASS
   Malformed Input           FAIL
   Recovery                  FAIL
   Heartbeat                 FAIL
@@ -24,13 +24,13 @@ SCORE BREAKDOWN
 FAILURE DETAILS
   Type: HEARTBEAT_TIMEOUT
   Mutation: RANDOM
-  Sequence: #89
-  Phase: BOUNDARY
-  Heartbeat Timeout: 501 ms
+  Sequence: #202
+  Phase: CHECKSUM
+  Heartbeat Timeout: 440 ms
   Suspected: Random payload triggers unhandled code path in command parser
-  Minimal: 8 bytes
-  Replay: 3/3 FAILED — REPRODUCIBLE
-  Packet: A5 0E 0A 5C 01 E7 4F F8
+  Minimal: 7 bytes
+  Replay: 2/3 FAILED — INTERMITTENT
+  Packet: A5 09 02 35 62 F8 95
 
-SEED: 82845 | CAMPAIGN SEED: 794022
+SEED: 31077 | CAMPAIGN SEED: 883819
 ==================================================
