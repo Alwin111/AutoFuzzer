@@ -6,6 +6,34 @@ AutoFuzzer runs **entirely autonomously** on the ESP32. No PC is required for ba
 
 ---
 
+## Gallery
+
+### Hardware Build
+
+The AutoFuzzer v4.0 prototype — ESP32, OLED, LEDs, buttons, buzzer, battery, and SD card slot on a perfboard.
+
+![Hardware Build](docs/images/hardware-build.png)
+
+### Testing: ESP32 ↔ STM32 Nucleo
+
+AutoFuzzer connected to an STM32 Nucleo-F446RE for UART robustness testing.
+
+![ESP32 testing STM32 Nucleo](docs/images/test-stm32-nucleo.png)
+
+### Testing: ESP32 ↔ Arduino Nano
+
+AutoFuzzer connected to an Arduino Nano clone for UART fuzzing over SoftwareSerial.
+
+![ESP32 testing Arduino Nano](docs/images/test-arduino-nano.png)
+
+### Test Results — Serial Monitor Output
+
+UART quick test completed — 258 packets across 7 mutation phases, 14 NACKs, 0 failures, robustness score 75/100.
+
+![Serial Monitor Output](docs/images/test-result-uart.png)
+
+---
+
 ## What's New in v4.0
 
 ### Core Firmware
