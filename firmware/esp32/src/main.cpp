@@ -74,6 +74,8 @@ static bool     s_replayRunning = false;
 // Minimizer state
 static uint32_t s_minimCurrentLen = 0;
 static uint32_t s_minimBestLen = 0;
+static uint32_t s_minimLow = 0;
+static uint32_t s_minimHigh = 0;
 static bool     s_minimRunning = false;
 
 // Serial command buffer
@@ -687,11 +689,14 @@ static void start_minimize(void) {
 
   s_minimCurrentLen = rec->testcase.packetLen;
   s_minimBestLen = rec->testcase.packetLen;
+  s_minimLow = Proto::UartFrameOverhead + 1;  // Minimum viable packet
+  s_minimHigh = rec->testcase.packetLen;       // Original length
   s_minimRunning = true;
   oled_ui_set_screen(SCREEN_MINIMIZING);
   s_appState = APP_MINIMIZING;
 
-  Serial.printf("MINIMIZE START — original %u bytes\n", s_minimCurrentLen);
+  Serial.printf("MINIMIZE START — original %u bytes, binary search %u-%u\n",
+                s_minimCurrentLen, s_minimLow, s_minimHigh);
 }
 
 static void update_minimize(void) {
@@ -703,12 +708,12 @@ static void update_minimize(void) {
     return;
   }
 
-  // Protocol-aware minimization: try reducing payload length
-  // Start from current length, try smaller sizes
-  uint32_t tryLen = s_minimCurrentLen - 1;
+  // Protocol-aware binary search minimization
+  // Try midpoint between low and high
+  uint32_t tryLen = (s_minimLow + s_minimHigh) / 2;
 
-  if (tryLen < Proto::UartFrameOverhead + 1) {
-    // Can't go smaller than header + 1 byte
+  // Check if we've converged
+  if (s_minimHigh <= s_minimLow + 1) {
     s_minimRunning = false;
     failure_update_minimized(s_minimBestLen);
 
@@ -716,13 +721,14 @@ static void update_minimize(void) {
                   rec->testcase.packetLen, s_minimBestLen);
 
     indicators_beep_start(100);
+    delay(500);
     oled_ui_set_screen(SCREEN_FAILURE_MENU);
     s_appState = APP_FAILURE_MENU;
     return;
   }
 
   // Build a modified packet with reduced length
-  Serial.printf("MINIMIZE: trying %u bytes...\n", tryLen);
+  Serial.printf("MINIMIZE: trying %u bytes (range %u-%u)...\n", tryLen, s_minimLow, s_minimHigh);
 
   // Reset DUT state
   heartbeat_reset();
@@ -744,7 +750,7 @@ static void update_minimize(void) {
     return;
   }
 
-  // Generate minimized packet: same mutation, shorter payload
+  // Generate minimized packet: same mutation type, shorter payload
   uint8_t buffer[64];
   buffer[0] = Proto::UartSync;
   buffer[1] = Proto::UartCmd;
@@ -759,8 +765,13 @@ static void update_minimize(void) {
     checksum ^= buffer[5 + i];
   }
 
+  // Preserve the mutation's effect
   if (rec->testcase.mutation == MUT_BAD_CRC) {
     checksum ^= 0xFF;  // Keep the bad CRC
+  } else if (rec->testcase.mutation == MUT_MALFORMED_HEADER) {
+    buffer[0] = 0xFF;  // Keep corrupted sync
+  } else if (rec->testcase.mutation == MUT_INVALID_LENGTH) {
+    buffer[2] = 0xFF;  // Keep invalid length
   }
 
   buffer[5 + payLen] = checksum;
@@ -781,23 +792,14 @@ static void update_minimize(void) {
   }
 
   if (failDetected) {
-    // This shorter length also fails — keep it
+    // This shorter length also fails — keep it, try even smaller
     s_minimBestLen = tryLen;
-    s_minimCurrentLen = tryLen;
+    s_minimLow = tryLen;
     Serial.printf("MINIMIZE: %u bytes -> STILL FAILS\n", tryLen);
   } else {
-    // This shorter length passes — the minimal failure is one byte larger
-    Serial.printf("MINIMIZE: %u bytes -> PASSES (minimal is %u)\n", tryLen, s_minimCurrentLen);
-    s_minimRunning = false;
-    failure_update_minimized(s_minimBestLen);
-
-    Serial.printf("MINIMIZE COMPLETE: %u -> %u bytes\n",
-                  rec->testcase.packetLen, s_minimBestLen);
-
-    indicators_beep_start(100);
-    delay(1500);
-    oled_ui_set_screen(SCREEN_FAILURE_MENU);
-    s_appState = APP_FAILURE_MENU;
+    // This shorter length passes — minimal failure is larger
+    s_minimHigh = tryLen;
+    Serial.printf("MINIMIZE: %u bytes -> PASSES\n", tryLen);
   }
 
   oled_ui_redraw();

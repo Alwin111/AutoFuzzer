@@ -46,6 +46,9 @@ static uint8_t build_packet(uint8_t* buffer, uint8_t bufSize, MutationType mutat
     case MUT_BAD_CRC:    payloadLen = 8; break;
     case MUT_TRUNCATED:  payloadLen = 12; break;
     case MUT_RANDOM:     payloadLen = (uint8_t)(prng_range(32) + 1); break;
+    case MUT_MALFORMED_HEADER: payloadLen = 8; break;  // Will corrupt sync
+    case MUT_INVALID_LENGTH:   payloadLen = 8; break;  // Will set len=0xFF
+    case MUT_SEQ_ANOMALY:      payloadLen = 8; break;  // Will jump sequence
     default:             payloadLen = 8; break;
   }
 
@@ -55,6 +58,21 @@ static uint8_t build_packet(uint8_t* buffer, uint8_t bufSize, MutationType mutat
   buffer[2] = payloadLen;
   buffer[3] = s_sequence & 0xFF;
   buffer[4] = (s_sequence >> 8) & 0xFF;
+
+  // Apply header mutations AFTER building the base header
+  if (mutation == MUT_MALFORMED_HEADER) {
+    // Corrupt the sync byte — parser should reject
+    buffer[0] = (uint8_t)(prng_range(0xFF) + 1);  // Any byte except 0x00
+  } else if (mutation == MUT_INVALID_LENGTH) {
+    // Set length field to 0xFF — parser should reject
+    buffer[2] = 0xFF;
+  } else if (mutation == MUT_SEQ_ANOMALY) {
+    // Jump sequence by large amount
+    uint16_t jump = (uint16_t)(prng_range(0xFF00) + 0x0100);
+    uint16_t jumpSeq = s_sequence + jump;
+    buffer[3] = jumpSeq & 0xFF;
+    buffer[4] = (jumpSeq >> 8) & 0xFF;
+  }
 
   // Calculate running checksum
   uint8_t checksum = cmd ^ payloadLen ^ buffer[3] ^ buffer[4];
@@ -68,7 +86,11 @@ static uint8_t build_packet(uint8_t* buffer, uint8_t bufSize, MutationType mutat
     }
   }
 
-  // Apply CRC mutation
+  // Apply CRC mutation (recalculate after header mutations)
+  checksum = buffer[1] ^ buffer[2] ^ buffer[3] ^ buffer[4];
+  for (uint8_t i = 0; i < payloadLen && (5 + i) < bufSize; i++) {
+    checksum ^= buffer[5 + i];
+  }
   if (mutation == MUT_BAD_CRC) {
     checksum ^= 0xFF;  // Invert checksum
   }

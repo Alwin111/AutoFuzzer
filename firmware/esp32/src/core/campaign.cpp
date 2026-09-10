@@ -69,22 +69,22 @@ static const char* kPhaseNames[] = {
 // picks one based on these weights.
 // ============================================
 
-// Weights per phase: [VALID, EMPTY, MAX, OVER, CRC, TRUNC, RAND]
+// Weights per phase: [VALID, EMPTY, MAX, OVER, CRC, TRUNC, RAND, HEADER, LEN, SEQ]
 static const uint8_t kPhaseWeights[][MUT_COUNT] = {
   // PHASE_BASELINE: mostly valid, some empty
-  { 80, 15, 5, 0, 0, 0, 0 },
+  { 80, 15, 5, 0, 0, 0, 0, 0, 0, 0 },
   // PHASE_BOUNDARY: empty + max length
-  { 10, 30, 40, 10, 0, 10, 0 },
+  { 10, 30, 40, 10, 0, 10, 0, 0, 0, 0 },
   // PHASE_OVERLENGTH: overlength dominant
-  { 5, 5, 10, 60, 5, 10, 5 },
+  { 5, 5, 10, 60, 5, 10, 5, 0, 0, 0 },
   // PHASE_CHECKSUM: bad CRC dominant
-  { 5, 5, 5, 10, 60, 5, 10 },
-  // PHASE_MALFORMED: truncated + random
-  { 5, 5, 5, 10, 10, 35, 30 },
+  { 5, 5, 5, 10, 60, 5, 10, 0, 0, 0 },
+  // PHASE_MALFORMED: header/len/seq mutations
+  { 5, 5, 5, 10, 10, 20, 15, 15, 10, 5 },
   // PHASE_RANDOM: equal random + adaptive
-  { 5, 5, 5, 10, 10, 15, 50 },
+  { 5, 5, 5, 10, 10, 10, 30, 10, 10, 5 },
   // PHASE_FREEFORM: full distribution
-  { 10, 10, 10, 15, 15, 15, 25 }
+  { 10, 8, 8, 12, 12, 12, 18, 10, 8, 4 }
 };
 
 // ============================================

@@ -121,12 +121,16 @@ enum MutationType : uint8_t {
   MUT_BAD_CRC,
   MUT_TRUNCATED,
   MUT_RANDOM,
+  MUT_MALFORMED_HEADER,  // Corrupted sync byte
+  MUT_INVALID_LENGTH,    // Length field says 0xFF
+  MUT_SEQ_ANOMALY,       // Sequence number jump
   MUT_COUNT
 };
 
 static const char* MutationNames[] = {
   "VALID", "EMPTY", "MAX_LEN", "OVERLENGTH",
-  "BAD_CRC", "TRUNCATED", "RANDOM"
+  "BAD_CRC", "TRUNCATED", "RANDOM",
+  "BAD_HEADER", "BAD_LEN", "SEQ_JUMP"
 };
 
 // ============================================
@@ -355,3 +359,71 @@ struct UartResponse {
   uint8_t status;
   uint32_t recvTimeMs;
 };
+
+// ============================================
+// PROTOCOL PROFILES
+//
+// Configurable settings per target board + protocol.
+// Allows different baud rates, timing, and limits
+// without hardcoding throughout the firmware.
+// ============================================
+struct ProtocolProfile {
+  const char* name;
+  ProtocolMode protocol;
+  TargetBoard board;
+  
+  // UART settings
+  uint32_t uartBaud;         // Baud rate
+  uint8_t  uartDataBits;     // 7 or 8
+  uint8_t  uartStopBits;     // 1 or 2
+  uint8_t  uartParity;       // 0=none, 1=even, 2=odd
+  
+  // Timing
+  uint32_t packetIntervalMs; // Min time between packets
+  uint32_t respTimeoutMs;    // Wait for DUT response
+  uint32_t heartbeatTimeoutMs; // Heartbeat timeout
+  
+  // Limits
+  uint8_t  maxPayload;       // Max valid payload bytes
+  uint8_t  frameOverhead;    // Header + footer bytes
+  
+  // I2C settings
+  uint8_t  i2cAddr;          // DUT I2C address
+  uint32_t i2cSpeed;         // Bus speed (Hz)
+};
+
+// Pre-configured profiles
+static const ProtocolProfile kProfiles[] = {
+  // STM32 Nucleo — UART @ 115200
+  { "STM32 UART", PROTO_UART, BOARD_STM32,
+    115200, 8, 1, 0,
+    50, 100, 350,
+    32, 6,
+    0x10, 100000 },
+
+  // STM32 Nucleo — SPI
+  { "STM32 SPI", PROTO_SPI, BOARD_STM32,
+    0, 0, 0, 0,
+    50, 100, 350,
+    32, 0,
+    0x10, 100000 },
+
+  // Arduino Nano — UART @ 9600 (SoftwareSerial)
+  { "Nano UART", PROTO_UART, BOARD_ARDUINO_NANO,
+    9600, 8, 1, 0,
+    100, 100, 350,
+    32, 6,
+    0x10, 100000 },
+
+  // ESP32 loopback — UART @ 115200
+  { "ESP32 Loop", PROTO_UART, BOARD_ESP32,
+    115200, 8, 1, 0,
+    50, 100, 350,
+    32, 6,
+    0x10, 100000 },
+};
+
+static const uint8_t kProfileCount = sizeof(kProfiles) / sizeof(kProfiles[0]);
+
+// Get profile by board and protocol
+const ProtocolProfile* get_profile(TargetBoard board, ProtocolMode proto);
