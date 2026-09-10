@@ -89,6 +89,26 @@ class LogicAnalyzerCapture:
         """Check if LA capture is available."""
         return self._sigrok_available
 
+    def _detect_driver(self) -> Optional[str]:
+        """Auto-detect available logic analyzer driver."""
+        if not self._sigrok_available:
+            return None
+        try:
+            result = subprocess.run(
+                ["sigrok-cli", "--scan"],
+                capture_output=True, text=True, timeout=10
+            )
+            for line in result.stdout.splitlines():
+                line_lower = line.lower()
+                if "fx2lafw" in line_lower or "saleae" in line_lower:
+                    return "fx2lafw"
+                elif "demo" in line_lower:
+                    return "demo"
+            # Fallback to demo if no real device found
+            return "demo"
+        except (subprocess.TimeoutExpired, FileNotFoundError):
+            return "demo"
+
     def get_device_list(self) -> list:
         """List available logic analyzer devices."""
         if not self._sigrok_available:
@@ -106,7 +126,7 @@ class LogicAnalyzerCapture:
         except (subprocess.TimeoutExpired, FileNotFoundError):
             return []
 
-    def start_capture(self, config: LACaptureConfig) -> Optional[LACaptureResult]:
+    def start_capture(self, config: LACaptureConfig, driver: str = None) -> Optional[LACaptureResult]:
         """
         Start a logic analyzer capture.
 
@@ -116,6 +136,13 @@ class LogicAnalyzerCapture:
         if not self._sigrok_available:
             print("[!] sigrok-cli not found. Install with: sudo apt install sigrok-cli")
             return None
+
+        # Auto-detect driver if not specified
+        if driver is None:
+            driver = self._detect_driver()
+            if not driver:
+                print("[!] No logic analyzer device found. Connect one or use 'demo' for testing.")
+                return None
 
         # Build channel list based on protocol
         channel_info = self.CHANNEL_MAP.get(config.protocol, self.CHANNEL_MAP["UART"])
@@ -128,15 +155,22 @@ class LogicAnalyzerCapture:
         output_path = self._capture_dir / filename
 
         # Build sigrok-cli command
+        decoder = self._get_decoder(config.protocol)
+        num_samples = config.sample_rate * config.capture_ms // 1000
         cmd = [
             "sigrok-cli",
-            "--driver", "fx2lafw",
-            "--config", f"samplerate={config.sample_rate}",
-            "--samples", str(config.sample_rate * config.capture_ms // 1000),
-            "--channels", ",".join(str(c) for c in channels),
-            "--output", str(output_path),
-            "--protocol-decoder", self._get_decoder(config.protocol),
+            "-d", driver,
+            "--samples", str(num_samples),
+            "-O", "vcd",  # Force VCD output format
+            "-o", str(output_path),
         ]
+        # Add samplerate config and channels only for real devices
+        if driver != "demo":
+            cmd.extend(["-c", f"samplerate={config.sample_rate}"])
+            cmd.extend(["-C", ",".join(str(c) for c in channels)])
+            # Add protocol decoder only for real devices
+            if decoder:
+                cmd.extend(["-P", decoder])
 
         print(f"[*] Starting LA capture: {config.protocol} @ {config.sample_rate/1e6:.1f} MHz")
         print(f"    Duration: {config.capture_ms} ms")
@@ -191,44 +225,69 @@ class LogicAnalyzerCapture:
         Parse a VCD (Value Change Dump) file and extract timing data.
 
         Returns a dictionary with:
-          - channels: dict of channel_id -> list of (timestamp, value) tuples
+          - channels: dict of channel_id -> list of (timestamp_ns, value) tuples
           - metadata: dict with timing info
         """
         channels = {}
         metadata = {}
+        id_to_name = {}  # Map VCD IDs (!, ", #, etc.) to channel names
 
         try:
-            with open(vcd_path, "r") as f:
-                current_channel = None
-                current_value = {}
+            with open(vcd_path, "rb") as f:
+                raw = f.read()
+            try:
+                text = raw.decode("utf-8")
+            except UnicodeDecodeError:
+                text = raw.decode("latin-1")
+            
+            lines = text.splitlines()
+            current_timestamp = 0
 
-                for line in f:
-                    line = line.strip()
+            for line in lines:
+                line = line.strip()
 
-                    # Parse header metadata
-                    if line.startswith("$timescale"):
-                        metadata["timescale"] = line
-                    elif line.startswith("$scope"):
-                        # Extract channel name
-                        parts = line.split()
-                        if len(parts) >= 3:
-                            ch_name = parts[2]
-                            current_channel = ch_name
-                            channels[ch_name] = []
-                    elif line.startswith("$upscope"):
-                        current_channel = None
-                    elif line.startswith("$var"):
-                        # Variable definition
-                        parts = line.split()
-                        if len(parts) >= 5:
-                            ch_id = parts[3]
-                            ch_name = parts[4]
-                            channels[ch_name] = []
-                    elif current_channel and line and line[0] in "01xzXZ":
-                        # Value change
-                        if len(line) >= 2:
-                            value = line[0]
-                            channels[current_channel].append((time.time(), int(value) if value in "01" else value))
+                # Parse header metadata
+                if line.startswith("$timescale"):
+                    metadata["timescale"] = line
+                elif line.startswith("$var"):
+                    # Variable definition: $var wire 1 ! D0 $end
+                    parts = line.split()
+                    if len(parts) >= 5:
+                        vcd_id = parts[3]  # !, ", #, etc.
+                        ch_name = parts[4]  # D0, D1, etc.
+                        id_to_name[vcd_id] = ch_name
+                        channels[ch_name] = []
+                elif line.startswith("#"):
+                    # Timestamp line may also contain value changes: #0 1! 0" 0#
+                    parts = line.split(None, 1)
+                    try:
+                        current_timestamp = int(parts[0][1:])
+                    except ValueError:
+                        pass
+                    # Parse value changes on the same line
+                    rest = parts[1] if len(parts) > 1 else ""
+                    if rest and rest[0] in "01xzXZ":
+                        line = rest  # Fall through to value parsing below
+                    else:
+                        continue
+                if line and line[0] in "01xzXZ" and len(line) >= 2:
+                    # Value change on current timestamp: 0! means D0=0
+                    # Parse all value changes on this line
+                    i = 0
+                    while i < len(line):
+                        if line[i] in "01xzXZ":
+                            value = line[i]
+                            i += 1
+                            # Next char(s) is the channel ID
+                            if i < len(line):
+                                vcd_id = line[i]
+                                i += 1
+                                if vcd_id in id_to_name:
+                                    ch_name = id_to_name[vcd_id]
+                                    int_val = int(value) if value in "01" else value
+                                    channels[ch_name].append((current_timestamp, int_val))
+                        else:
+                            i += 1
 
         except Exception as e:
             print(f"[!] VCD parse error: {e}")
