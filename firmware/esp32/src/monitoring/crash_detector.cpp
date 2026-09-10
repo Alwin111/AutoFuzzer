@@ -5,6 +5,13 @@
 #include "../core/testcase.h"
 #include "../core/campaign.h"
 
+// Track the last mutation sent (set by main loop)
+static MutationType s_lastMutation = MUT_VALID;
+
+void crash_detector_set_last_mutation(MutationType mut) {
+  s_lastMutation = mut;
+}
+
 // ============================================
 // Internal State
 // ============================================
@@ -66,6 +73,9 @@ bool crash_detector_update(void) {
 
   // Mark as failed
   s_failed = true;
+
+  // Record heartbeat failure for adaptive mutation statistics
+  campaign_record_mutation_heartbeat_fail(s_lastMutation);
 
   // Get the current testcase
   const TestcaseMeta* tc = testcase_get_last();

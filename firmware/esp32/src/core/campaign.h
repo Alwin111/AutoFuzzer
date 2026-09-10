@@ -69,3 +69,36 @@ void campaign_record_heartbeat_timeout(void);
 
 // Get accumulated stats
 const CampaignStats* campaign_get_stats(void);
+
+// ============================================
+// Adaptive Mutation Scheduler
+//
+// Tracks per-mutation statistics to dynamically
+// adjust selection probability. Mutations that
+// produce interesting behavior (NACKs, timeouts,
+// unique responses) get higher priority.
+//
+// Includes exploration to prevent starvation.
+// ============================================
+
+// Per-mutation statistics for adaptive scheduling
+struct MutationStats {
+  uint32_t executions;       // Total times selected
+  uint32_t acks;            // ACK responses received
+  uint32_t nacks;           // NACK responses received
+  uint32_t timeouts;        // No response / timeout
+  uint32_t heartbeatFails;  // Heartbeat failures after this mutation
+  uint32_t uniqueBehaviors; // Distinct response patterns seen
+};
+
+// Get stats for a specific mutation type
+const MutationStats* campaign_get_mutation_stats(MutationType mut);
+
+// Record that a mutation produced a specific response type
+void campaign_record_mutation_response(MutationType mut, bool ack, bool nack, bool timeout);
+
+// Record heartbeat failure for a mutation
+void campaign_record_mutation_heartbeat_fail(MutationType mut);
+
+// Get adaptive weight for a mutation (used for display/logging)
+uint32_t campaign_get_mutation_weight(MutationType mut);

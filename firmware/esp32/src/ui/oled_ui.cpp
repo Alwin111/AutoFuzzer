@@ -480,24 +480,26 @@ static void render_fuzzing(void) {
   uint32_t elapsed = campaign_get_elapsed_ms() / 1000;
   uint32_t total = campaign_get_duration_ms() / 1000;
   s_display.setCursor(0, 14);
-  s_display.printf("Time:   %u/%us", elapsed, total);
+  s_display.printf("Time:  %u/%us", elapsed, total);
 
-  // Packets
+  // Packets and phase
+  const CampaignStats* stats = campaign_get_stats();
   s_display.setCursor(0, 24);
-  s_display.printf("Pkts:   %u", campaign_get_packet_count());
+  s_display.printf("Pkts:  %u", stats->totalPackets);
 
-  // Failures
+  // ACK/NACK counts
+  s_display.setCursor(72, 24);
+  s_display.printf("A:%u N:%u", stats->totalAcks, stats->totalNacks);
+
+  // Failures and phase
   s_display.setCursor(0, 34);
-  s_display.printf("Fails:  %u", failure_get_count());
-
-  // Current mutation
-  s_display.setCursor(0, 44);
-  MutationType mut = campaign_select_mutation();
-  s_display.printf("Mut:    %s", MutationNames[mut]);
+  s_display.printf("Fails: %u", failure_get_count());
+  s_display.setCursor(72, 34);
+  s_display.printf("Ph:%s", campaign_get_phase_name());
 
   // DUT status
   s_display.setCursor(0, 54);
-  s_display.printf("DUT:    %s", heartbeat_is_alive() ? "ALIVE" : "TIMEOUT!");
+  s_display.printf("DUT:   %s", heartbeat_is_alive() ? "ALIVE" : "TIMEOUT!");
 
   s_display.display();
 }

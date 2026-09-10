@@ -25,6 +25,25 @@ static uint32_t       s_pauseTotal = 0;
 static CampaignStats  s_stats;
 
 // ============================================
+// Adaptive Mutation Statistics
+//
+// Tracks per-mutation outcomes to dynamically
+// adjust selection probability. Mutations that
+// produce interesting behavior (NACKs, timeouts,
+// heartbeat failures) get boosted priority.
+// ============================================
+static MutationStats s_mutationStats[MUT_COUNT];
+
+// Exploration rate: 10% of selections are pure random
+// to prevent starvation of any mutation type
+static const uint32_t kExplorationRate = 10;  // 1 in 10
+
+// Adaptive weight boost factors
+static const uint32_t kNackBoost = 3;       // NACK = interesting response
+static const uint32_t kTimeoutBoost = 5;    // Timeout = very interesting
+static const uint32_t kHbFailBoost = 10;    // Heartbeat failure = highest interest
+
+// ============================================
 // Phase transition times (relative to campaign start)
 // ============================================
 static const uint32_t kPhaseBoundaries[] = {
@@ -74,6 +93,7 @@ static const uint8_t kPhaseWeights[][MUT_COUNT] = {
 void campaign_init(void) {
   s_state = CAMP_IDLE;
   memset(&s_stats, 0, sizeof(s_stats));
+  memset(s_mutationStats, 0, sizeof(s_mutationStats));
 }
 
 // ============================================
@@ -97,6 +117,7 @@ void campaign_start(ProtocolMode protocol, TestProfile profile, uint32_t customD
 
   // Clear stats
   memset(&s_stats, 0, sizeof(CampaignStats));
+  memset(s_mutationStats, 0, sizeof(s_mutationStats));
   s_stats.durationMs = s_durationMs;
 
   s_startMs = millis();
@@ -152,13 +173,6 @@ void campaign_update(void) {
 
   // Update phase based on elapsed time
   CampaignPhase newPhase = PHASE_FREEFORM;
-  for (int i = 5; i >= 0; i--) {
-    if (s_elapsedMs >= kPhaseBoundaries[i]) {
-      newPhase = (CampaignPhase)(i + 1);  // Phase indices offset by 1 from boundary array
-      if (i == 0) newPhase = PHASE_BASELINE;
-      break;
-    }
-  }
 
   // Map elapsed time to phase
   if (s_elapsedMs < 5000) {
@@ -233,19 +247,69 @@ const CampaignStats* campaign_get_stats(void) {
 }
 
 // ============================================
-// Mutation Selection
+// Adaptive Mutation Statistics
+// ============================================
+const MutationStats* campaign_get_mutation_stats(MutationType mut) {
+  if (mut >= MUT_COUNT) return nullptr;
+  return &s_mutationStats[mut];
+}
+
+void campaign_record_mutation_response(MutationType mut, bool ack, bool nack, bool timeout) {
+  if (mut >= MUT_COUNT) return;
+  MutationStats& ms = s_mutationStats[mut];
+  ms.executions++;
+  if (ack) ms.acks++;
+  if (nack) ms.nacks++;
+  if (timeout) ms.timeouts++;
+}
+
+void campaign_record_mutation_heartbeat_fail(MutationType mut) {
+  if (mut >= MUT_COUNT) return;
+  s_mutationStats[mut].heartbeatFails++;
+}
+
+uint32_t campaign_get_mutation_weight(MutationType mut) {
+  if (mut >= MUT_COUNT) return 0;
+
+  // Start with base phase weight
+  uint32_t weight = kPhaseWeights[s_phase][mut];
+
+  // Apply adaptive boosts based on observed behavior
+  const MutationStats& ms = s_mutationStats[mut];
+
+  // Boost mutations that produced interesting responses
+  weight += ms.nacks * kNackBoost;
+  weight += ms.timeouts * kTimeoutBoost;
+  weight += ms.heartbeatFails * kHbFailBoost;
+
+  // Small penalty for mutations that only produce ACKs (less interesting)
+  if (ms.executions > 10 && ms.nacks == 0 && ms.timeouts == 0 && ms.heartbeatFails == 0) {
+    weight = weight * 3 / 4;  // 25% reduction
+  }
+
+  return weight;
+}
+
+// ============================================
+// Mutation Selection — Adaptive with Exploration
 //
-// Uses phase-weighted random selection.
-// Within a phase, mutations are chosen based on
-// pre-defined weight tables that prioritize the
-// most valuable mutations for that phase.
+// 1. 10% of the time, select purely randomly
+//    (exploration — prevents starvation)
+// 2. Otherwise, use phase-weighted selection
+//    boosted by adaptive statistics
 // ============================================
 MutationType campaign_select_mutation(void) {
-  const uint8_t* weights = kPhaseWeights[s_phase];
+  // Exploration: pure random selection
+  if (prng_range(100) < kExplorationRate) {
+    return (MutationType)prng_range(MUT_COUNT);
+  }
 
-  // Calculate total weight
+  // Adaptive weighted selection
+  uint32_t weights[MUT_COUNT];
   uint32_t total = 0;
+
   for (uint8_t i = 0; i < MUT_COUNT; i++) {
+    weights[i] = campaign_get_mutation_weight((MutationType)i);
     total += weights[i];
   }
 

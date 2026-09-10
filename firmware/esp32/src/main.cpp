@@ -395,21 +395,30 @@ static void run_fuzzing_cycle(void) {
   bool hbAlive = heartbeat_update();
 
   // 3. Monitor protocol responses
+  // Track last mutation for adaptive statistics
+  static MutationType s_lastMutation = MUT_VALID;
+
   if (s_selectedProtocol == PROTO_UART) {
     uart_parser_poll();
 
     if (uart_parser_has_response()) {
       const UartResponse* resp = uart_parser_get_response();
 
-      if (resp->status == Proto::StatusAck) {
+      bool isAck = (resp->status == Proto::StatusAck);
+      bool isNack = !isAck;
+
+      if (isAck) {
         campaign_record_ack();
       } else {
         campaign_record_nack();
       }
 
+      // Record for adaptive mutation statistics
+      campaign_record_mutation_response(s_lastMutation, isAck, isNack, false);
+
       Serial.printf("RESP seq=%u status=0x%02X %s\n",
                     resp->sequence, resp->status,
-                    resp->status == Proto::StatusAck ? "ACK" :
+                    isAck ? "ACK" :
                     resp->status == Proto::StatusNackOverlen ? "NACK-OVERLEN" :
                     resp->status == Proto::StatusNackChecksum ? "NACK-CHECKSUM" : "UNKNOWN");
 
@@ -420,14 +429,21 @@ static void run_fuzzing_cycle(void) {
     if (i2c_fuzzer_has_response()) {
       I2cResponse resp;
       if (i2c_fuzzer_get_response(&resp)) {
-        if (resp.writeResult == Proto::I2cRespSuccess) {
+        bool isAck = (resp.writeResult == Proto::I2cRespSuccess);
+        bool isNack = (resp.writeResult == Proto::I2cRespNackAddr ||
+                       resp.writeResult == Proto::I2cRespNackData);
+        bool isTimeout = !isAck && !isNack;
+
+        if (isAck) {
           campaign_record_ack();
-        } else if (resp.writeResult == Proto::I2cRespNackAddr ||
-                   resp.writeResult == Proto::I2cRespNackData) {
+        } else if (isNack) {
           campaign_record_nack();
         } else {
           campaign_record_no_response();
         }
+
+        // Record for adaptive mutation statistics
+        campaign_record_mutation_response(s_lastMutation, isAck, isNack, isTimeout);
       }
       i2c_fuzzer_clear_response();
     }
@@ -458,8 +474,10 @@ static void run_fuzzing_cycle(void) {
   if (millis() - lastPacketMs >= Proto::PacketIntervalMs) {
     lastPacketMs = millis();
 
-    // Select mutation based on campaign phase
+    // Select mutation based on campaign phase + adaptive stats
     MutationType mut = campaign_select_mutation();
+    s_lastMutation = mut;
+    crash_detector_set_last_mutation(mut);
 
     // Flash active LED
     indicators_set_active(true);

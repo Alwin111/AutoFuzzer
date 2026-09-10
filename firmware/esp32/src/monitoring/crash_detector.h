@@ -37,3 +37,6 @@ uint32_t crash_detector_get_heartbeat_age(void);
 
 // Clear failure state (e.g., after DUT recovery or replay)
 void crash_detector_clear(void);
+
+// Set the last mutation type sent (for adaptive statistics)
+void crash_detector_set_last_mutation(MutationType mut);
