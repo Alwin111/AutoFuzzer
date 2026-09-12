@@ -1,0 +1,1459 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AutoFuzzer Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.4/socket.io.min.js"></script>
+<style>
+/* ============================================================
+   ROOT / THEME
+   ============================================================ */
+:root {
+    --bg:          #0a0e17;
+    --bg-card:     #111827;
+    --bg-card-alt: #1a2234;
+    --bg-input:    #0d1420;
+    --border:      #1e2d44;
+    --border-glow: #00d4ff22;
+    --text:        #e2e8f0;
+    --text-dim:    #64748b;
+    --text-bright: #f8fafc;
+    --accent:      #00d4ff;
+    --accent-dim:  #00d4ff33;
+    --green:       #22c55e;
+    --green-dim:   #22c55e22;
+    --red:         #ef4444;
+    --red-dim:     #ef444422;
+    --yellow:      #eab308;
+    --yellow-dim:  #eab30822;
+    --orange:      #f97316;
+    --purple:      #a78bfa;
+    --pink:        #ec4899;
+    --font:        'JetBrains Mono', 'Fira Code', 'SF Mono', 'Consolas', monospace;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    overflow-x: hidden;
+}
+
+/* ============================================================
+   HEADER
+   ============================================================ */
+.header {
+    background: linear-gradient(135deg, #0f1729, #162033);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 24px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+}
+
+.header-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.logo {
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--accent);
+    letter-spacing: 2px;
+}
+
+.logo-sub {
+    font-size: 11px;
+    color: var(--text-dim);
+    letter-spacing: 1px;
+}
+
+.header-right {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.conn-status {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-dim);
+}
+
+.conn-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--red);
+    transition: background 0.3s;
+}
+
+.conn-dot.online {
+    background: var(--green);
+    box-shadow: 0 0 8px var(--green);
+}
+
+.btn {
+    padding: 6px 14px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 12px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn:hover {
+    background: var(--bg-card-alt);
+    border-color: var(--accent);
+}
+
+.btn-primary {
+    background: var(--accent);
+    color: #000;
+    border-color: var(--accent);
+    font-weight: 600;
+}
+
+.btn-primary:hover {
+    background: #33dfff;
+}
+
+.btn-danger {
+    border-color: var(--red);
+    color: var(--red);
+}
+
+.btn-danger:hover {
+    background: var(--red-dim);
+}
+
+.btn-success {
+    border-color: var(--green);
+    color: var(--green);
+}
+
+.btn-success:hover {
+    background: var(--green-dim);
+}
+
+/* ============================================================
+   LAYOUT
+   ============================================================ */
+.dashboard {
+    display: grid;
+    grid-template-columns: 280px 1fr 320px;
+    grid-template-rows: auto auto 1fr;
+    gap: 16px;
+    padding: 16px 24px;
+    max-width: 1800px;
+    margin: 0 auto;
+    min-height: calc(100vh - 64px);
+}
+
+/* ============================================================
+   CARDS
+   ============================================================ */
+.card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+}
+
+.card-header {
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--text-dim);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.card-body {
+    padding: 14px;
+}
+
+/* ============================================================
+   STATUS PANEL (left column)
+   ============================================================ */
+.status-panel {
+    grid-row: 1 / 4;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.status-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid #1a2234;
+    font-size: 12px;
+}
+
+.status-item:last-child { border-bottom: none; }
+
+.status-label { color: var(--text-dim); }
+.status-value { color: var(--text-bright); font-weight: 600; }
+
+.status-value.ok { color: var(--green); }
+.status-value.fail { color: var(--red); }
+.status-value.warn { color: var(--yellow); }
+
+/* ============================================================
+   BIG GAUGE (center top)
+   ============================================================ */
+.gauge-area {
+    grid-column: 2;
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 16px;
+}
+
+.gauge-card {
+    text-align: center;
+    padding: 20px 14px;
+}
+
+.gauge-ring {
+    width: 100px;
+    height: 100px;
+    margin: 0 auto 12px;
+    position: relative;
+}
+
+.gauge-ring svg {
+    transform: rotate(-90deg);
+    width: 100px;
+    height: 100px;
+}
+
+.gauge-ring circle {
+    fill: none;
+    stroke-width: 8;
+    stroke-linecap: round;
+}
+
+.gauge-ring .bg { stroke: var(--border); }
+
+.gauge-ring .fg {
+    stroke: var(--accent);
+    stroke-dasharray: 251;
+    stroke-dashoffset: 251;
+    transition: stroke-dashoffset 1s ease, stroke 0.5s;
+}
+
+.gauge-value {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    font-size: 22px;
+    font-weight: 700;
+    color: var(--text-bright);
+}
+
+.gauge-label {
+    font-size: 11px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+/* ============================================================
+   COUNTERS ROW
+   ============================================================ */
+.counters {
+    grid-column: 2;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 12px;
+}
+
+.counter-card {
+    text-align: center;
+    padding: 14px 8px;
+}
+
+.counter-value {
+    font-size: 28px;
+    font-weight: 700;
+    color: var(--text-bright);
+    line-height: 1;
+    margin-bottom: 6px;
+}
+
+.counter-label {
+    font-size: 10px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 1px;
+}
+
+.counter-value.green { color: var(--green); }
+.counter-value.red { color: var(--red); }
+.counter-value.yellow { color: var(--yellow); }
+.counter-value.cyan { color: var(--accent); }
+.counter-value.purple { color: var(--purple); }
+
+/* ============================================================
+   TIMELINE CHART
+   ============================================================ */
+.chart-area {
+    grid-column: 2;
+    min-height: 200px;
+}
+
+.chart-container {
+    position: relative;
+    height: 180px;
+    padding: 10px;
+}
+
+canvas {
+    width: 100% !important;
+    height: 100% !important;
+}
+
+/* ============================================================
+   MUTATION BAR CHART
+   ============================================================ */
+.mutations-area {
+    grid-column: 1 / 4;
+}
+
+.mutation-bars {
+    display: flex;
+    gap: 6px;
+    align-items: flex-end;
+    height: 100px;
+    padding: 0 4px;
+}
+
+.mutation-bar {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.mutation-bar-fill {
+    width: 100%;
+    min-height: 2px;
+    border-radius: 3px 3px 0 0;
+    transition: height 0.5s ease;
+    background: var(--accent);
+}
+
+.mutation-bar-fill.nack { background: var(--yellow); }
+.mutation-bar-fill.error { background: var(--red); }
+
+.mutation-bar-label {
+    font-size: 8px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    writing-mode: vertical-lr;
+    transform: rotate(180deg);
+    max-height: 60px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.mutation-bar-count {
+    font-size: 10px;
+    color: var(--text-bright);
+    font-weight: 600;
+}
+
+/* ============================================================
+   SERIAL LOG (right column)
+   ============================================================ */
+.serial-panel {
+    grid-row: 1 / 4;
+    display: flex;
+    flex-direction: column;
+}
+
+.serial-panel .card-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 0;
+}
+
+.serial-input-row {
+    display: flex;
+    gap: 6px;
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+}
+
+.serial-input {
+    flex: 1;
+    padding: 6px 10px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-input);
+    color: var(--text-bright);
+    font-family: var(--font);
+    font-size: 12px;
+    outline: none;
+}
+
+.serial-input:focus {
+    border-color: var(--accent);
+}
+
+.serial-log {
+    flex: 1;
+    overflow-y: auto;
+    padding: 8px 12px;
+    font-size: 11px;
+    line-height: 1.6;
+    max-height: calc(100vh - 200px);
+    min-height: 500px;
+}
+
+.log-line {
+    color: var(--text-dim);
+    word-break: break-all;
+}
+
+.log-line .ts {
+    color: #334155;
+    margin-right: 6px;
+}
+
+.log-line.failure {
+    color: var(--red);
+    font-weight: 600;
+}
+
+.log-line.success {
+    color: var(--green);
+}
+
+.log-line.phase {
+    color: var(--accent);
+}
+
+.log-line.system {
+    color: var(--yellow);
+}
+
+/* ============================================================
+   HEARTBEAT INDICATOR
+   ============================================================ */
+.hb-indicator {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+}
+
+.hb-indicator.alive {
+    background: var(--green-dim);
+    border: 1px solid var(--green);
+    color: var(--green);
+}
+
+.hb-indicator.dead {
+    background: var(--red-dim);
+    border: 1px solid var(--red);
+    color: var(--red);
+    animation: pulse-red 1s infinite;
+}
+
+@keyframes pulse-red {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.6; }
+}
+
+.hb-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: currentColor;
+}
+
+.hb-dot.alive {
+    animation: hb-blink 1s infinite;
+}
+
+@keyframes hb-blink {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+}
+
+/* ============================================================
+   VERDICT BANNER
+   ============================================================ */
+.verdict-banner {
+    padding: 16px 20px;
+    border-radius: 10px;
+    text-align: center;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    margin-bottom: 12px;
+}
+
+.verdict-banner.pass {
+    background: linear-gradient(135deg, #052e16, #14532d);
+    border: 1px solid var(--green);
+    color: var(--green);
+}
+
+.verdict-banner.fail {
+    background: linear-gradient(135deg, #450a0a, #7f1d1d);
+    border: 1px solid var(--red);
+    color: var(--red);
+}
+
+.verdict-banner.testing {
+    background: linear-gradient(135deg, #0c1a30, #1e3a5f);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    animation: pulse-blue 2s infinite;
+}
+
+@keyframes pulse-blue {
+    0%, 100% { box-shadow: 0 0 0 0 var(--accent-dim); }
+    50% { box-shadow: 0 0 20px 4px var(--accent-dim); }
+}
+
+/* ============================================================
+   SCROLLBAR
+   ============================================================ */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg); }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #2a3a55; }
+
+/* ============================================================
+   QUICK COMMANDS
+   ============================================================ */
+.quick-cmds {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    padding: 8px 12px;
+    border-top: 1px solid var(--border);
+}
+
+.cmd-btn {
+    padding: 6px 4px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: var(--bg-input);
+    color: var(--text);
+    font-family: var(--font);
+    font-size: 10px;
+    cursor: pointer;
+    text-align: center;
+    transition: all 0.2s;
+}
+
+.cmd-btn:hover {
+    border-color: var(--accent);
+    background: var(--accent-dim);
+    color: var(--accent);
+}
+
+.cmd-btn.start { border-color: var(--green); color: var(--green); }
+.cmd-btn.stop { border-color: var(--red); color: var(--red); }
+.cmd-btn.start:hover { background: var(--green-dim); }
+.cmd-btn.stop:hover { background: var(--red-dim); }
+
+/* ============================================================
+   TIMELINE
+   ============================================================ */
+.timeline-events {
+    max-height: 180px;
+    overflow-y: auto;
+    padding: 8px 0;
+}
+
+.timeline-event {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 4px 0;
+    font-size: 11px;
+}
+
+.timeline-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.timeline-dot.start { background: var(--green); }
+.timeline-dot.phase { background: var(--accent); }
+.timeline-dot.failure { background: var(--red); }
+.timeline-dot.complete { background: var(--purple); }
+.timeline-dot.replay { background: var(--yellow); }
+.timeline-dot.verdict { background: var(--orange); }
+
+.timeline-text {
+    color: var(--text-dim);
+}
+
+.timeline-text strong {
+    color: var(--text-bright);
+}
+
+/* ============================================================
+   RESPONSIVE
+   ============================================================ */
+@media (max-width: 1200px) {
+    .dashboard {
+        grid-template-columns: 1fr;
+    }
+    .status-panel, .serial-panel {
+        grid-row: auto;
+    }
+    .gauge-area { grid-column: 1; }
+    .counters { grid-column: 1; }
+    .chart-area { grid-column: 1; }
+    .mutations-area { grid-column: 1; }
+}
+
+/* ============================================================
+   LOADING / CONNECT MODAL
+   ============================================================ */
+.modal-overlay {
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.7);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 200;
+}
+
+.modal {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 30px;
+    max-width: 400px;
+    width: 90%;
+    text-align: center;
+}
+
+.modal h2 {
+    font-size: 18px;
+    margin-bottom: 12px;
+    color: var(--accent);
+}
+
+.modal p {
+    font-size: 13px;
+    color: var(--text-dim);
+    margin-bottom: 20px;
+}
+
+.modal .btn { margin: 4px; }
+
+.hidden { display: none !important; }
+
+/* ============================================================
+   SPINNER
+   ============================================================ */
+.spinner {
+    display: inline-block;
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ============================================================
+   PROGRESS BAR
+   ============================================================ */
+.progress-bar {
+    width: 100%;
+    height: 6px;
+    background: var(--border);
+    border-radius: 3px;
+    overflow: hidden;
+    margin: 8px 0;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--accent), var(--purple));
+    border-radius: 3px;
+    transition: width 0.5s ease;
+    width: 0%;
+}
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+     HEADER
+     ============================================================ -->
+<div class="header">
+    <div class="header-left">
+        <div>
+            <div class="logo">⚡ AUTOFUZZER</div>
+            <div class="logo-sub">EMBEDDED PROTOCOL ROBUSTNESS TESTER</div>
+        </div>
+    </div>
+    <div class="header-right">
+        <div class="conn-status">
+            <div class="conn-dot" id="connDot"></div>
+            <span id="connText">Disconnected</span>
+        </div>
+        <select id="portSelect" class="btn" style="min-width:140px">
+            <option value="">Select port...</option>
+        </select>
+        <button class="btn btn-primary" id="btnConnect" onclick="connectSerial()">Connect</button>
+        <button class="btn btn-danger hidden" id="btnDisconnect" onclick="disconnectSerial()">Disconnect</button>
+        <button class="btn" onclick="refreshPorts()">↻ Refresh</button>
+    </div>
+</div>
+
+<!-- ============================================================
+     DASHBOARD GRID
+     ============================================================ -->
+<div class="dashboard">
+
+    <!-- LEFT: STATUS PANEL -->
+    <div class="status-panel">
+        <!-- Heartbeat -->
+        <div class="card">
+            <div class="card-header">DUT Status</div>
+            <div class="card-body">
+                <div class="hb-indicator alive" id="hbIndicator">
+                    <div class="hb-dot alive" id="hbDot"></div>
+                    <span id="hbText">HEARTBEAT OK</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Campaign Info -->
+        <div class="card">
+            <div class="card-header">Campaign</div>
+            <div class="card-body">
+                <div class="status-item">
+                    <span class="status-label">State</span>
+                    <span class="status-value" id="stateVal">IDLE</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Protocol</span>
+                    <span class="status-value" id="protocolVal">—</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Profile</span>
+                    <span class="status-value" id="profileVal">—</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Phase</span>
+                    <span class="status-value cyan" id="phaseVal">IDLE</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Mutation</span>
+                    <span class="status-value" id="mutationVal">NONE</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Progress -->
+        <div class="card">
+            <div class="card-header">Progress</div>
+            <div class="card-body">
+                <div class="progress-bar">
+                    <div class="progress-fill" id="progressFill"></div>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Elapsed</span>
+                    <span class="status-value" id="timeVal">0/0s</span>
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Packets</span>
+                    <span class="status-value cyan" id="packetsVal">0</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Verdict -->
+        <div class="card">
+            <div class="card-header">Result</div>
+            <div class="card-body">
+                <div class="verdict-banner testing" id="verdictBanner">
+                    WAITING
+                </div>
+                <div class="status-item">
+                    <span class="status-label">Score</span>
+                    <span class="status-value" id="scoreVal">—/100</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Timeline -->
+        <div class="card" style="flex:1">
+            <div class="card-header">Timeline</div>
+            <div class="card-body">
+                <div class="timeline-events" id="timelineEvents">
+                    <div class="timeline-event">
+                        <div class="timeline-dot start"></div>
+                        <span class="timeline-text">System ready</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CENTER: GAUGES -->
+    <div class="gauge-area">
+        <!-- ACKs Gauge -->
+        <div class="card gauge-card">
+            <div class="card-header">ACKs</div>
+            <div class="card-body">
+                <div class="gauge-ring">
+                    <svg viewBox="0 0 100 100">
+                        <circle class="bg" cx="50" cy="50" r="40"/>
+                        <circle class="fg" id="ackGauge" cx="50" cy="50" r="40"
+                            style="stroke: var(--green);"/>
+                    </svg>
+                    <div class="gauge-value green" id="ackCount">0</div>
+                </div>
+                <div class="gauge-label">Acknowledged</div>
+            </div>
+        </div>
+
+        <!-- NACKs Gauge -->
+        <div class="card gauge-card">
+            <div class="card-header">NACKs</div>
+            <div class="card-body">
+                <div class="gauge-ring">
+                    <svg viewBox="0 0 100 100">
+                        <circle class="bg" cx="50" cy="50" r="40"/>
+                        <circle class="fg" id="nackGauge" cx="50" cy="50" r="40"
+                            style="stroke: var(--yellow);"/>
+                    </svg>
+                    <div class="gauge-value yellow" id="nackCount">0</div>
+                </div>
+                <div class="gauge-label">Rejected</div>
+            </div>
+        </div>
+
+        <!-- Errors Gauge -->
+        <div class="card gauge-card">
+            <div class="card-header">Errors</div>
+            <div class="card-body">
+                <div class="gauge-ring">
+                    <svg viewBox="0 0 100 100">
+                        <circle class="bg" cx="50" cy="50" r="40"/>
+                        <circle class="fg" id="errGauge" cx="50" cy="50" r="40"
+                            style="stroke: var(--red);"/>
+                    </svg>
+                    <div class="gauge-value red" id="errCount">0</div>
+                </div>
+                <div class="gauge-label">Errors</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- CENTER: COUNTERS -->
+    <div class="counters">
+        <div class="card counter-card">
+            <div class="counter-value cyan" id="totalPackets">0</div>
+            <div class="counter-label">Packets</div>
+        </div>
+        <div class="card counter-card">
+            <div class="counter-value green" id="totalAcks">0</div>
+            <div class="counter-label">ACKs</div>
+        </div>
+        <div class="card counter-card">
+            <div class="counter-value yellow" id="totalNacks">0</div>
+            <div class="counter-label">NACKs</div>
+        </div>
+        <div class="card counter-card">
+            <div class="counter-value red" id="totalFailures">0</div>
+            <div class="counter-label">Failures</div>
+        </div>
+        <div class="card counter-card">
+            <div class="counter-value purple" id="totalMutations">0</div>
+            <div class="counter-label">Mutations Used</div>
+        </div>
+    </div>
+
+    <!-- CENTER: TIMELINE CHART -->
+    <div class="card chart-area">
+        <div class="card-header">
+            <span>Packet Timeline</span>
+            <span id="chartInfo" style="color:var(--text-dim)">Live</span>
+        </div>
+        <div class="chart-container">
+            <canvas id="timelineChart"></canvas>
+        </div>
+    </div>
+
+    <!-- CENTER: MUTATION DISTRIBUTION -->
+    <div class="card mutations-area">
+        <div class="card-header">Mutation Distribution</div>
+        <div class="card-body">
+            <div class="mutation-bars" id="mutationBars">
+                <div style="color:var(--text-dim); font-size:11px; width:100%; text-align:center; padding:20px;">
+                    No mutations yet — start a test
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- RIGHT: SERIAL LOG -->
+    <div class="card serial-panel">
+        <div class="card-header">
+            <span>Serial Monitor</span>
+            <button class="btn" onclick="clearLog()" style="padding:2px 8px; font-size:10px">Clear</button>
+        </div>
+        <div class="card-body">
+            <div class="serial-log" id="serialLog">
+                <div class="log-line system">
+                    <span class="ts">[--:--:--]</span> Waiting for connection...
+                </div>
+            </div>
+            <div class="serial-input-row">
+                <input type="text" class="serial-input" id="serialInput" 
+                    placeholder="Type command..." 
+                    onkeydown="if(event.key==='Enter')sendCommand()">
+                <button class="btn btn-primary" onclick="sendCommand()">Send</button>
+            </div>
+            <div class="quick-cmds">
+                <button class="cmd-btn start" onclick="sendQuick('START')">▶ START</button>
+                <button class="cmd-btn stop" onclick="sendQuick('STOP')">⏹ STOP</button>
+                <button class="cmd-btn" onclick="sendQuick('STATUS')">📊 STATUS</button>
+                <button class="cmd-btn" onclick="sendQuick('RESET')">🔄 RESET</button>
+                <button class="cmd-btn" onclick="sendQuick('SETUART')">UART</button>
+                <button class="cmd-btn" onclick="sendQuick('SETSPI')">SPI</button>
+                <button class="cmd-btn" onclick="sendQuick('SETI2C')">I2C</button>
+                <button class="cmd-btn" onclick="sendQuick('RESULT')">📋 RESULT</button>
+                <button class="cmd-btn" onclick="sendQuick('REPLAY')">🔁 REPLAY</button>
+                <button class="cmd-btn" onclick="sendQuick('HELP')">❓ HELP</button>
+                <button class="cmd-btn" onclick="sendQuick('SIMFAIL')">💥 SIMFAIL</button>
+                <button class="cmd-btn" onclick="sendQuick('EXPORT')">📤 EXPORT</button>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+<!-- ============================================================
+     JAVASCRIPT
+     ============================================================ -->
+<script>
+// ============================================================
+// Socket.IO Connection
+// ============================================================
+const socket = io();
+let state = {};
+let chartData = [];
+let chartLabels = [];
+let maxChartPoints = 60;
+let chartCtx = null;
+let lastPacketCount = 0;
+let packetRateHistory = [];
+
+// ============================================================
+// Socket Events
+// ============================================================
+socket.on('connect', () => {
+    console.log('WebSocket connected');
+    socket.emit('request_state');
+});
+
+socket.on('connected', (data) => {
+    state = data.state;
+    updateUI();
+});
+
+socket.on('state_update', (data) => {
+    state = data;
+    updateUI();
+});
+
+socket.on('serial_line', (data) => {
+    addLogLine(data.line, data.time);
+    if (data.state) {
+        state = data.state;
+        updateUI();
+    }
+});
+
+socket.on('serial_error', (data) => {
+    addLogLine(`ERROR: ${data.error}`, '', 'failure');
+});
+
+socket.on('disconnect', () => {
+    document.getElementById('connDot').classList.remove('online');
+    document.getElementById('connText').textContent = 'Dashboard disconnected';
+});
+
+// ============================================================
+// Serial Functions
+// ============================================================
+async function refreshPorts() {
+    try {
+        const resp = await fetch('/api/ports');
+        const data = await resp.json();
+        const sel = document.getElementById('portSelect');
+        sel.innerHTML = '<option value="">Select port...</option>';
+        data.ports.forEach(p => {
+            const opt = document.createElement('option');
+            opt.value = p.device;
+            opt.textContent = `${p.device} — ${p.description}`;
+            sel.appendChild(opt);
+        });
+        if (data.auto_detect) {
+            sel.value = data.auto_detect;
+        }
+    } catch(e) {
+        console.error('Failed to list ports:', e);
+    }
+}
+
+async function connectSerial() {
+    const port = document.getElementById('portSelect').value;
+    try {
+        const resp = await fetch('/api/connect', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({port: port || null, baud: 115200})
+        });
+        const data = await resp.json();
+        if (data.error) {
+            addLogLine(`Connection failed: ${data.error}`, '', 'failure');
+        } else {
+            addLogLine(`Connected to ${data.port} @ ${data.baud} baud`, '', 'success');
+            document.getElementById('connDot').classList.add('online');
+            document.getElementById('connText').textContent = data.port;
+            document.getElementById('btnConnect').classList.add('hidden');
+            document.getElementById('btnDisconnect').classList.remove('hidden');
+        }
+    } catch(e) {
+        addLogLine(`Connection error: ${e}`, '', 'failure');
+    }
+}
+
+async function disconnectSerial() {
+    await fetch('/api/disconnect', {method: 'POST'});
+    document.getElementById('connDot').classList.remove('online');
+    document.getElementById('connText').textContent = 'Disconnected';
+    document.getElementById('btnConnect').classList.remove('hidden');
+    document.getElementById('btnDisconnect').classList.add('hidden');
+    addLogLine('Disconnected from ESP32', '', 'system');
+}
+
+async function sendCommand() {
+    const input = document.getElementById('serialInput');
+    const cmd = input.value.trim();
+    if (!cmd) return;
+    
+    try {
+        await fetch('/api/send', {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({command: cmd})
+        });
+        input.value = '';
+    } catch(e) {
+        addLogLine(`Send failed: ${e}`, '', 'failure');
+    }
+}
+
+function sendQuick(cmd) {
+    document.getElementById('serialInput').value = cmd;
+    sendCommand();
+}
+
+// ============================================================
+// Log
+// ============================================================
+function addLogLine(line, time, type) {
+    const log = document.getElementById('serialLog');
+    const div = document.createElement('div');
+    div.className = 'log-line';
+    
+    if (!time) {
+        const now = new Date();
+        time = now.toTimeString().slice(0, 8);
+    }
+    
+    // Classify line
+    if (!type) {
+        const upper = line.toUpperCase();
+        if (upper.includes('FAILURE') || upper.includes('FAIL') || upper.includes('!!!'))
+            type = 'failure';
+        else if (upper.includes('PASS') || upper.includes('SUCCESS') || upper.includes('ACK'))
+            type = 'success';
+        else if (upper.includes('PHASE') || upper.includes('CAMPAIGN'))
+            type = 'phase';
+        else if (upper.includes('START') || upper.includes('CONNECT') || upper.includes('ERROR'))
+            type = 'system';
+    }
+    
+    if (type) div.className += ' ' + type;
+    div.innerHTML = `<span class="ts">[${time}]</span>${escapeHtml(line)}`;
+    log.appendChild(div);
+    
+    // Keep max 500 lines
+    while (log.children.length > 500) {
+        log.removeChild(log.firstChild);
+    }
+    
+    // Auto-scroll
+    log.scrollTop = log.scrollHeight;
+}
+
+function clearLog() {
+    document.getElementById('serialLog').innerHTML = '';
+    addLogLine('Log cleared', '', 'system');
+}
+
+function escapeHtml(s) {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// ============================================================
+// UI Update
+// ============================================================
+function updateUI() {
+    if (!state) return;
+    
+    // Connection
+    const dot = document.getElementById('connDot');
+    const txt = document.getElementById('connText');
+    if (state.connected) {
+        dot.classList.add('online');
+        txt.textContent = state.port || 'Connected';
+    } else {
+        dot.classList.remove('online');
+        txt.textContent = 'Disconnected';
+    }
+    
+    // Campaign info
+    setText('stateVal', state.state || 'IDLE');
+    setStateColor('stateVal', state.state);
+    setText('protocolVal', state.protocol || '—');
+    setText('profileVal', state.profile || '—');
+    setText('phaseVal', state.phase || 'IDLE');
+    setText('mutationVal', state.mutation || 'NONE');
+    
+    // Heartbeat
+    const hbInd = document.getElementById('hbIndicator');
+    const hbDot = document.getElementById('hbDot');
+    const hbText = document.getElementById('hbText');
+    if (state.heartbeat_ok) {
+        hbInd.className = 'hb-indicator alive';
+        hbDot.className = 'hb-dot alive';
+        hbText.textContent = 'HEARTBEAT OK';
+    } else {
+        hbInd.className = 'hb-indicator dead';
+        hbDot.className = 'hb-dot';
+        hbText.textContent = 'HEARTBEAT LOST';
+    }
+    
+    // Progress
+    const pct = state.duration_ms > 0 
+        ? Math.min(100, (state.elapsed_ms / state.duration_ms) * 100) 
+        : 0;
+    document.getElementById('progressFill').style.width = pct + '%';
+    setText('timeVal', `${state.elapsed_ms}/${state.duration_ms}s`);
+    setText('packetsVal', state.test_num);
+    
+    // Counters
+    setText('totalPackets', state.test_num);
+    setText('totalAcks', state.acks);
+    setText('totalNacks', state.nacks);
+    setText('totalFailures', state.failures);
+    const mutCount = Object.keys(state.mutations_used || {}).length;
+    setText('totalMutations', mutCount);
+    
+    // Gauges
+    updateGauge('ackGauge', 'ackCount', state.acks, state.test_num || 1, 'var(--green)');
+    updateGauge('nackGauge', 'nackCount', state.nacks, state.test_num || 1, 'var(--yellow)');
+    updateGauge('errGauge', 'errCount', state.errors, state.test_num || 1, 'var(--red)');
+    
+    // Verdict
+    const vb = document.getElementById('verdictBanner');
+    const sv = document.getElementById('scoreVal');
+    if (state.verdict && state.verdict !== 'N/A' && state.verdict !== 'UNKNOWN') {
+        vb.textContent = state.verdict;
+        vb.className = 'verdict-banner ' + state.verdict.toLowerCase();
+    } else if (state.state === 'RUNNING') {
+        vb.textContent = 'FUZZING';
+        vb.className = 'verdict-banner testing';
+    } else if (state.state === 'FAILURE') {
+        vb.textContent = 'FAILURE DETECTED';
+        vb.className = 'verdict-banner fail';
+    } else {
+        vb.textContent = 'WAITING';
+        vb.className = 'verdict-banner testing';
+    }
+    setText('scoreVal', state.robustness_score > 0 ? `${state.robustness_score}/100` : '—/100');
+    
+    // Mutation bars
+    updateMutationBars(state.mutations_used || {});
+    
+    // Timeline
+    updateTimeline(state.timeline || []);
+    
+    // Chart
+    updateChart();
+}
+
+function setText(id, val) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = val;
+}
+
+function setStateColor(id, s) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.className = 'status-value';
+    if (s === 'RUNNING') el.classList.add('ok');
+    else if (s === 'FAILURE') el.classList.add('fail');
+    else if (s === 'COMPLETE') el.classList.add('ok');
+    else if (s === 'PAUSED') el.classList.add('warn');
+}
+
+// ============================================================
+// Gauge
+// ============================================================
+function updateGauge(gaugeId, countId, value, max, color) {
+    const gauge = document.getElementById(gaugeId);
+    const count = document.getElementById(countId);
+    if (!gauge || !count) return;
+    
+    const pct = max > 0 ? Math.min(1, value / max) : 0;
+    const circumference = 2 * Math.PI * 40; // r=40
+    const offset = circumference * (1 - pct);
+    gauge.style.strokeDashoffset = offset;
+    count.textContent = value;
+}
+
+// ============================================================
+// Mutation Bars
+// ============================================================
+function updateMutationBars(mutations) {
+    const container = document.getElementById('mutationBars');
+    const names = Object.keys(mutations);
+    
+    if (names.length === 0) {
+        container.innerHTML = '<div style="color:var(--text-dim); font-size:11px; width:100%; text-align:center; padding:20px;">No mutations yet — start a test</div>';
+        return;
+    }
+    
+    const maxVal = Math.max(...Object.values(mutations), 1);
+    const colors = ['#00d4ff', '#22c55e', '#eab308', '#ef4444', '#a78bfa', '#ec4899', '#f97316', '#06b6d4', '#84cc16', '#f43f5e'];
+    
+    container.innerHTML = names.map((name, i) => {
+        const val = mutations[name];
+        const h = Math.max(2, (val / maxVal) * 80);
+        const color = colors[i % colors.length];
+        return `
+            <div class="mutation-bar">
+                <div class="mutation-bar-count">${val}</div>
+                <div class="mutation-bar-fill" style="height:${h}px; background:${color}"></div>
+                <div class="mutation-bar-label">${name}</div>
+            </div>
+        `;
+    }).join('');
+}
+
+// ============================================================
+// Timeline
+// ============================================================
+function updateTimeline(events) {
+    const container = document.getElementById('timelineEvents');
+    if (!events || events.length === 0) return;
+    
+    const dotClass = {
+        'CAMPAIGN_START': 'start',
+        'PHASE': 'phase',
+        'FAILURE': 'failure',
+        'CAMPAIGN_COMPLETE': 'complete',
+        'VERDICT': 'verdict',
+        'REPLAY': 'replay',
+    };
+    
+    const labels = {
+        'CAMPAIGN_START': 'Campaign started',
+        'PHASE': 'Phase change',
+        'FAILURE': 'Failure detected',
+        'CAMPAIGN_COMPLETE': 'Campaign complete',
+        'VERDICT': 'Verdict',
+        'REPLAY': 'Replay attempt',
+    };
+    
+    container.innerHTML = events.slice(-20).reverse().map(ev => {
+        const cls = dotClass[ev.event] || 'phase';
+        const label = labels[ev.event] || ev.event;
+        const data = ev.data ? `: <strong>${ev.data}</strong>` : '';
+        return `
+            <div class="timeline-event">
+                <div class="timeline-dot ${cls}"></div>
+                <span class="timeline-text">${label}${data}</span>
+            </div>
+        `;
+    }).join('');
+}
+
+// ============================================================
+// Chart (simple canvas, no external deps)
+// ============================================================
+function initChart() {
+    const canvas = document.getElementById('timelineChart');
+    chartCtx = canvas.getContext('2d');
+    resizeCanvas();
+    window.addEventListener('resize', resizeCanvas);
+}
+
+function resizeCanvas() {
+    const canvas = document.getElementById('timelineChart');
+    if (!canvas) return;
+    const container = canvas.parentElement;
+    canvas.width = container.clientWidth;
+    canvas.height = container.clientHeight;
+    drawChart();
+}
+
+function updateChart() {
+    // Record packet count every second
+    const now = Date.now();
+    if (chartData.length === 0 || now - (chartData[chartData.length-1]?.t || 0) > 1000) {
+        chartData.push({
+            t: now,
+            packets: state.test_num || 0,
+            acks: state.acks || 0,
+            nacks: state.nacks || 0,
+            failures: state.failures || 0,
+        });
+        
+        if (chartData.length > maxChartPoints) {
+            chartData.shift();
+        }
+        
+        drawChart();
+    }
+}
+
+function drawChart() {
+    if (!chartCtx || chartData.length < 2) return;
+    
+    const canvas = chartCtx.canvas;
+    const W = canvas.width;
+    const H = canvas.height;
+    const pad = {top: 10, right: 10, bottom: 20, left: 50};
+    const plotW = W - pad.left - pad.right;
+    const plotH = H - pad.top - pad.bottom;
+    
+    chartCtx.clearRect(0, 0, W, H);
+    
+    // Find ranges
+    const maxPackets = Math.max(...chartData.map(d => d.packets), 10);
+    const minX = chartData[0].t;
+    const maxX = chartData[chartData.length-1].t;
+    const rangeX = Math.max(maxX - minX, 1000);
+    
+    // Grid lines
+    chartCtx.strokeStyle = '#1e2d44';
+    chartCtx.lineWidth = 0.5;
+    for (let i = 0; i <= 4; i++) {
+        const y = pad.top + (plotH * i / 4);
+        chartCtx.beginPath();
+        chartCtx.moveTo(pad.left, y);
+        chartCtx.lineTo(W - pad.right, y);
+        chartCtx.stroke();
+        
+        // Label
+        chartCtx.fillStyle = '#475569';
+        chartCtx.font = '10px monospace';
+        chartCtx.textAlign = 'right';
+        const val = Math.round(maxPackets * (1 - i/4));
+        chartCtx.fillText(val.toString(), pad.left - 5, y + 3);
+    }
+    
+    // Draw lines
+    function drawLine(key, color) {
+        chartCtx.strokeStyle = color;
+        chartCtx.lineWidth = 2;
+        chartCtx.beginPath();
+        chartData.forEach((d, i) => {
+            const x = pad.left + ((d.t - minX) / rangeX) * plotW;
+            const y = pad.top + plotH - (d[key] / maxPackets) * plotH;
+            if (i === 0) chartCtx.moveTo(x, y);
+            else chartCtx.lineTo(x, y);
+        });
+        chartCtx.stroke();
+    }
+    
+    drawLine('packets', '#00d4ff');
+    drawLine('acks', '#22c55e');
+    drawLine('nacks', '#eab308');
+    drawLine('failures', '#ef4444');
+    
+    // Legend
+    const legends = [
+        {label: 'Packets', color: '#00d4ff'},
+        {label: 'ACKs', color: '#22c55e'},
+        {label: 'NACKs', color: '#eab308'},
+        {label: 'Failures', color: '#ef4444'},
+    ];
+    let lx = pad.left + 5;
+    legends.forEach(l => {
+        chartCtx.fillStyle = l.color;
+        chartCtx.fillRect(lx, H - 12, 8, 3);
+        chartCtx.fillStyle = '#64748b';
+        chartCtx.font = '9px monospace';
+        chartCtx.textAlign = 'left';
+        chartCtx.fillText(l.label, lx + 11, H - 8);
+        lx += chartCtx.measureText(l.label).width + 20;
+    });
+}
+
+// ============================================================
+// Init
+// ============================================================
+window.addEventListener('load', () => {
+    refreshPorts();
+    initChart();
+});
+
+window.addEventListener('resize', resizeCanvas);
+</script>
+
+</body>
+</html>
