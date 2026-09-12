@@ -343,13 +343,16 @@ pio device monitor -b 115200
 
 | Command | Action |
 | :--- | :--- |
-| `START` | Begin test campaign |
+| `START` | Begin test campaign (holds in protocol check until DUT heartbeat is detected — never runs without a connected DUT) |
 | `STOP` | Stop current campaign |
 | `PAUSE` | Pause/resume campaign |
 | `STATUS` | Show current status |
 | `EXPORT` | Export all failures as JSON |
 | `REPLAY` | Replay last failure |
 | `RESET` | Reset all state |
+| `RESULT` | Print full test result report |
+| `HBRAW` | Raw 2s sample of the heartbeat pin — diagnoses a disconnected heartbeat wire (stuck LOW/HIGH) vs a working signal |
+| `SIMFAIL` | Debug: freeze a simulated failure to test replay/minimize |
 | `HELP` | Show command list |
 
 ---

@@ -65,18 +65,37 @@ static ProtocolMode s_selectedProtocol = PROTO_UART;
 static TestProfile  s_selectedProfile  = TEST_QUICK;
 static uint32_t     s_customDurationMs = 30000;
 
-// Replay state
+// Replay state (non-blocking state machine)
+enum ReplayStep : uint8_t {
+  REP_WAIT_ALIVE = 0,   // Wait for DUT heartbeat to recover
+  REP_SEND,             // Transmit the exact failing testcase
+  REP_OBSERVE,          // Watch heartbeat/response for the oracle window
+  REP_GAP,              // Cooldown between attempts
+  REP_SHOW_RESULT,      // Display final classification briefly
+  REP_FINISHED
+};
 static uint8_t  s_replayAttempts = 0;
 static uint8_t  s_replayMaxAttempts = 3;
 static uint8_t  s_replayFails = 0;
 static bool     s_replayRunning = false;
+static ReplayStep s_replayStep = REP_WAIT_ALIVE;
+static uint32_t s_replayStepStartMs = 0;
 
-// Minimizer state
+// Minimizer state (non-blocking state machine)
+enum MinimStep : uint8_t {
+  MINIM_WAIT_ALIVE = 0, // Wait for DUT heartbeat before next probe
+  MINIM_SEND,           // Transmit candidate packet
+  MINIM_OBSERVE,        // Watch heartbeat for the oracle window
+  MINIM_FINISHED
+};
 static uint32_t s_minimCurrentLen = 0;
 static uint32_t s_minimBestLen = 0;
 static uint32_t s_minimLow = 0;
 static uint32_t s_minimHigh = 0;
 static bool     s_minimRunning = false;
+static MinimStep s_minimStep = MINIM_WAIT_ALIVE;
+static uint32_t s_minimStepStartMs = 0;
+static uint32_t s_minimTryLen = 0;
 
 // Serial command buffer
 static char s_serialBuf[128];
@@ -93,8 +112,10 @@ static void start_campaign(void);
 static void run_fuzzing_cycle(void);
 static void start_replay(void);
 static void update_replay(void);
+static void cancel_replay(const char* reason);
 static void start_minimize(void);
 static void update_minimize(void);
+static void cancel_minimize(const char* reason);
 static void process_serial_commands(void);
 
 // ============================================
@@ -149,14 +170,11 @@ void loop() {
 
     // ---- MENU ----
     case APP_MENU:
-      // Don't monitor heartbeat during menu navigation
-      // (prevents spam from floating pin when no DUT connected)
       handle_menu_input(btn);
       break;
 
     // ---- PROTOCOL CHECK ----
     case APP_PROTOCOL_CHECK:
-      heartbeat_update();
       handle_protocol_check_input(btn);
       break;
 
@@ -282,7 +300,7 @@ static void handle_menu_input(ButtonAction btn) {
 
         case SCREEN_TEST_CONFIRM:
           if (sel == 0) {
-            // YES — start protocol check then campaign
+            // YES — run protocol check, then campaign if DUT is alive
             start_campaign();
           } else {
             // NO — go back
@@ -303,23 +321,38 @@ static void handle_menu_input(ButtonAction btn) {
 
 // ============================================
 // Protocol Check Input
+//
+// The campaign may ONLY start once the DUT proves it is
+// alive with a real heartbeat edge. A silent/floating pin
+// can never auto-start a test — this prevents the bug where
+// a 30s campaign ran with nothing connected and printed PASS.
 // ============================================
 static void handle_protocol_check_input(ButtonAction btn) {
   bool hbAlive = heartbeat_update();
 
-  // Update readiness
-  oled_ui_set_selection(hbAlive ? 0 : 1);
-  oled_ui_redraw();
-
-  if (btn == BTN_SELECT && hbAlive) {
-    // Ready — start the campaign
+  // Auto-start as soon as real heartbeat evidence appears
+  if (hbAlive && heartbeat_has_signal()) {
     oled_ui_set_screen(SCREEN_FUZZING);
     s_appState = APP_FUZZING;
     campaign_start(s_selectedProtocol, s_selectedProfile, s_customDurationMs);
-    Serial.printf("CAMPAIGN STARTED: %s protocol, %s profile\n",
+    Serial.printf("PROTOCOL CHECK PASS — CAMPAIGN STARTED: %s protocol, %s profile\n",
                   ProtocolNames[s_selectedProtocol],
                   TestProfileNames[s_selectedProfile]);
-  } else if (btn == BTN_BACK) {
+    return;
+  }
+
+  // Only redraw the screen when the ready-state changes
+  // (avoids I2C display spam every loop iteration)
+  static int8_t s_lastShownReady = -1;
+  int8_t ready = hbAlive ? 1 : 0;
+  if (ready != s_lastShownReady) {
+    s_lastShownReady = ready;
+    oled_ui_set_selection(ready);
+    oled_ui_redraw();
+  }
+
+  if (btn == BTN_BACK) {
+    Serial.println("Protocol check cancelled by user.");
     oled_ui_set_screen(SCREEN_MAIN_MENU);
     s_appState = APP_MENU;
   }
@@ -327,6 +360,10 @@ static void handle_protocol_check_input(ButtonAction btn) {
 
 // ============================================
 // Start Campaign
+//
+// Initializes the fuzzer and enters PROTOCOL CHECK.
+// Campaign start is deferred until the DUT proves it is
+// alive (real heartbeat edges). No blind test runs.
 // ============================================
 static void start_campaign(void) {
   // Initialize the appropriate fuzzer
@@ -345,28 +382,16 @@ static void start_campaign(void) {
       break;
   }
 
-  // Reset heartbeat and check if DUT is alive
+  // Forget any previous heartbeat evidence: this campaign must
+  // prove the DUT is connected RIGHT NOW.
   heartbeat_reset();
+  heartbeat_clear_signal();
   crash_detector_clear();
-  delay(100);  // Brief settle time
-  bool hbAlive = heartbeat_update();
 
-  if (hbAlive) {
-    // Heartbeat detected — skip protocol check, start directly
-    Serial.printf("Heartbeat detected — starting campaign immediately.\n");
-    oled_ui_set_screen(SCREEN_FUZZING);
-    s_appState = APP_FUZZING;
-    campaign_start(s_selectedProtocol, s_selectedProfile, s_customDurationMs);
-    Serial.printf("CAMPAIGN STARTED: %s protocol, %s profile\n",
-                  ProtocolNames[s_selectedProtocol],
-                  TestProfileNames[s_selectedProfile]);
-  } else {
-    // No heartbeat yet — show protocol check, wait for user to confirm
-    oled_ui_set_screen(SCREEN_PROTOCOL_CHECK);
-    s_appState = APP_PROTOCOL_CHECK;
-    Serial.printf("Protocol check: %s — waiting for heartbeat...\n",
-                  ProtocolNames[s_selectedProtocol]);
-  }
+  oled_ui_set_screen(SCREEN_PROTOCOL_CHECK);
+  s_appState = APP_PROTOCOL_CHECK;
+  Serial.printf("Protocol check: %s — waiting for DUT heartbeat...\n",
+                ProtocolNames[s_selectedProtocol]);
 }
 
 // ============================================
@@ -395,6 +420,20 @@ static void run_fuzzing_cycle(void) {
 
   // 2. Monitor heartbeat
   bool hbAlive = heartbeat_update();
+
+  // If the DUT never showed a heartbeat and we're past the boot
+  // window, abort instead of running the full campaign blind.
+  // Verdict will be INCONCLUSIVE, never a false PASS.
+  if (!heartbeat_has_signal() && campaign_get_elapsed_ms() > 3000) {
+    if (s_selectedProtocol == PROTO_I2C) i2c_fuzzer_deinit();
+    campaign_stop();
+    Serial.println("ABORT: no DUT heartbeat detected during campaign — INCONCLUSIVE.");
+    Serial.println("Check wiring (heartbeat pin) and that the DUT is powered.");
+    indicators_led_pass_on();
+    s_appState = APP_RESULT;
+    oled_ui_set_screen(SCREEN_RESULT);
+    return;
+  }
 
   // 3. Monitor protocol responses
   // Track last mutation for adaptive statistics
@@ -570,236 +609,322 @@ static void handle_failure_menu_input(ButtonAction btn) {
 }
 
 // ============================================
-// Replay Engine
+// Replay Engine (non-blocking)
+//
+// Sends the exact failing testcase up to N times and
+// watches the heartbeat oracle. Buttons stay responsive
+// throughout — BACK cancels at any point.
 // ============================================
 static void start_replay(void) {
+  const FailureRecord* rec = failure_get_current();
+  if (!rec) {
+    Serial.println("REPLAY: no failure record to replay.");
+    return;
+  }
+
+  if (rec->protocol != PROTO_UART) {
+    Serial.println("REPLAY: currently supports UART failures only.");
+    Serial.println("(SPI/I2C replay requires protocol-aware replay — planned)");
+    indicators_beep_start(100);
+    return;
+  }
+
   s_replayAttempts = 0;
   s_replayFails = 0;
   s_replayRunning = true;
+  s_replayStep = REP_WAIT_ALIVE;
+  s_replayStepStartMs = millis();
+
   oled_ui_set_screen(SCREEN_REPLAY);
   s_appState = APP_REPLAYING;
 
-  Serial.println("REPLAY START — resetting DUT heartbeat monitor...");
+  Serial.println("REPLAY START — waiting for DUT heartbeat to recover...");
   heartbeat_reset();
   crash_detector_clear();
+}
 
-  // Small delay for DUT to recover
-  delay(500);
+static void cancel_replay(const char* reason) {
+  s_replayRunning = false;
+  Serial.printf("REPLAY cancelled: %s\n", reason);
+  oled_ui_set_screen(SCREEN_FAILURE_MENU);
+  s_appState = APP_FAILURE_MENU;
+}
+
+static void finish_replay(void) {
+  s_replayRunning = false;
+
+  // Determine reproducibility
+  FailureStatus status;
+  if (s_replayFails == s_replayAttempts && s_replayFails > 0) {
+    status = STATUS_REPRODUCIBLE;
+  } else if (s_replayFails > 0) {
+    status = STATUS_INTERMITTENT;
+  } else {
+    status = STATUS_NOT_REPRODUCIBLE;
+  }
+
+  failure_update_status(status, s_replayAttempts, s_replayFails);
+
+  Serial.printf("REPLAY RESULT: %u/%u failed — %s\n",
+                s_replayFails, s_replayAttempts,
+                FailureStatusNames[status]);
+
+  indicators_beep_start(150);
+  s_replayStep = REP_SHOW_RESULT;
+  s_replayStepStartMs = millis();
+  oled_ui_redraw();
 }
 
 static void update_replay(void) {
-  if (!s_replayRunning) return;
+  if (!s_replayRunning) {
+    // Show-result pause, then return to the failure menu
+    if (s_replayStep == REP_SHOW_RESULT &&
+        millis() - s_replayStepStartMs >= 2000) {
+      oled_ui_set_screen(SCREEN_FAILURE_MENU);
+      s_appState = APP_FAILURE_MENU;
+    }
+    return;
+  }
 
-  // Wait for DUT heartbeat to recover
+  // BACK cancels replay at any point
+  ButtonAction btn = buttons_update();
+  if (btn == BTN_BACK) {
+    cancel_replay("user pressed BACK");
+    return;
+  }
+
   heartbeat_update();
 
-  if (!heartbeat_is_alive()) {
-    // Still waiting for DUT to come back
-    oled_ui_redraw();
-    return;
-  }
+  switch (s_replayStep) {
 
-  // DUT is alive — replay the failing testcase
-  const FailureRecord* rec = failure_get_current();
-  if (!rec) {
-    s_replayRunning = false;
-    oled_ui_set_screen(SCREEN_FAILURE_MENU);
-    s_appState = APP_FAILURE_MENU;
-    return;
-  }
-
-  s_replayAttempts++;
-
-  Serial.printf("REPLAY #%u/%u — seq=%u, mutation=%s, len=%u\n",
-                s_replayAttempts, s_replayMaxAttempts,
-                rec->testcase.sequence,
-                MutationNames[rec->testcase.mutation],
-                rec->testcase.packetLen);
-
-  // Send the exact same packet
-  uart_fuzzer_replay(&rec->testcase);
-
-  // Wait for response and heartbeat check
-  uint32_t startMs = millis();
-  bool responseReceived = false;
-  bool heartbeatFailed = false;
-
-  while (millis() - startMs < 500) {
-    uart_parser_poll();
-    heartbeat_update();
-
-    if (uart_parser_has_response()) {
-      responseReceived = true;
-      uart_parser_clear_response();
-    }
-
-    if (!heartbeat_is_alive()) {
-      heartbeatFailed = true;
+    case REP_WAIT_ALIVE: {
+      // Give the DUT up to 5s to come back after the crash
+      if (heartbeat_is_alive()) {
+        s_replayStep = REP_SEND;
+        s_replayStepStartMs = millis();
+      } else if (millis() - s_replayStepStartMs > 5000) {
+        Serial.println("REPLAY: DUT did not recover — aborting replay.");
+        s_replayAttempts = 1;  // Record the aborted attempt honestly
+        s_replayFails = 0;
+        finish_replay();
+      }
       break;
     }
-  }
 
-  // Evaluate replay result
-  if (heartbeatFailed) {
-    s_replayFails++;
-    Serial.printf("REPLAY #%u: HEARTBEAT LOST — FAIL\n", s_replayAttempts);
-    crash_detector_clear();
-    heartbeat_reset();
-  } else {
-    Serial.printf("REPLAY #%u: HEARTBEAT OK — PASS\n", s_replayAttempts);
-  }
+    case REP_SEND: {
+      const FailureRecord* rec = failure_get_current();
+      if (!rec) {
+        cancel_replay("failure record lost");
+        return;
+      }
 
-  // Check if we've done enough attempts
-  if (s_replayAttempts >= s_replayMaxAttempts) {
-    s_replayRunning = false;
+      s_replayAttempts++;
+      Serial.printf("REPLAY #%u/%u — seq=%u, mutation=%s, len=%u\n",
+                    s_replayAttempts, s_replayMaxAttempts,
+                    rec->testcase.sequence,
+                    MutationNames[rec->testcase.mutation],
+                    rec->testcase.packetLen);
 
-    // Determine reproducibility
-    FailureStatus status;
-    if (s_replayFails == s_replayAttempts) {
-      status = STATUS_REPRODUCIBLE;
-    } else if (s_replayFails > 0) {
-      status = STATUS_INTERMITTENT;
-    } else {
-      status = STATUS_NOT_REPRODUCIBLE;
+      // Send the exact same packet
+      uart_fuzzer_replay(&rec->testcase);
+      s_replayStep = REP_OBSERVE;
+      s_replayStepStartMs = millis();
+      break;
     }
 
-    failure_update_status(status, s_replayAttempts, s_replayFails);
+    case REP_OBSERVE: {
+      uart_parser_poll();
 
-    Serial.printf("REPLAY RESULT: %u/%u failed — %s\n",
-                  s_replayFails, s_replayAttempts,
-                  FailureStatusNames[status]);
+      // Oracle: heartbeat lost within the observation window
+      if (!heartbeat_is_alive() && heartbeat_has_signal()) {
+        s_replayFails++;
+        Serial.printf("REPLAY #%u: HEARTBEAT LOST — FAIL\n", s_replayAttempts);
+        crash_detector_clear();  // includes heartbeat_reset
+        s_replayStep = REP_GAP;
+        s_replayStepStartMs = millis();
+      } else if (millis() - s_replayStepStartMs >= 500) {
+        Serial.printf("REPLAY #%u: HEARTBEAT OK — PASS\n", s_replayAttempts);
+        s_replayStep = REP_GAP;
+        s_replayStepStartMs = millis();
+      }
+      break;
+    }
 
-    indicators_beep_start(150);
-    oled_ui_set_screen(SCREEN_REPLAY);
-    oled_ui_redraw();
+    case REP_GAP: {
+      if (millis() - s_replayStepStartMs >= 300) {
+        if (s_replayAttempts >= s_replayMaxAttempts) {
+          finish_replay();
+        } else {
+          s_replayStep = REP_WAIT_ALIVE;
+          s_replayStepStartMs = millis();
+        }
+      }
+      break;
+    }
 
-    // Return to failure menu after showing result
-    delay(2000);
-    oled_ui_set_screen(SCREEN_FAILURE_MENU);
-    s_appState = APP_FAILURE_MENU;
+    default:
+      break;
   }
+
+  oled_ui_redraw();
 }
 
 // ============================================
-// Minimizer
+// Minimizer (non-blocking, protocol-aware)
+//
+// Binary-searches the smallest packet length that still
+// reproduces the failure. Buttons stay responsive —
+// BACK cancels at any point.
 // ============================================
 static void start_minimize(void) {
   const FailureRecord* rec = failure_get_current();
-  if (!rec) return;
+  if (!rec) {
+    Serial.println("MINIMIZE: no failure record.");
+    return;
+  }
+
+  if (rec->protocol != PROTO_UART) {
+    Serial.println("MINIMIZE: currently supports UART failures only.");
+    indicators_beep_start(100);
+    return;
+  }
 
   s_minimCurrentLen = rec->testcase.packetLen;
   s_minimBestLen = rec->testcase.packetLen;
   s_minimLow = Proto::UartFrameOverhead + 1;  // Minimum viable packet
-  s_minimHigh = rec->testcase.packetLen;       // Original length
+  s_minimHigh = rec->testcase.packetLen;      // Original length
   s_minimRunning = true;
+  s_minimStep = MINIM_WAIT_ALIVE;
+  s_minimStepStartMs = millis();
+
   oled_ui_set_screen(SCREEN_MINIMIZING);
   s_appState = APP_MINIMIZING;
 
   Serial.printf("MINIMIZE START — original %u bytes, binary search %u-%u\n",
                 s_minimCurrentLen, s_minimLow, s_minimHigh);
+  Serial.println("(BACK cancels minimization)");
+}
+
+static void cancel_minimize(const char* reason) {
+  s_minimRunning = false;
+  const FailureRecord* rec = failure_get_current();
+  if (rec) failure_update_minimized(s_minimBestLen);
+  Serial.printf("MINIMIZE cancelled: %s\n", reason);
+  oled_ui_set_screen(SCREEN_FAILURE_MENU);
+  s_appState = APP_FAILURE_MENU;
+}
+
+static void finish_minimize(void) {
+  s_minimRunning = false;
+  const FailureRecord* rec = failure_get_current();
+  if (rec) failure_update_minimized(s_minimBestLen);
+
+  Serial.printf("MINIMIZE COMPLETE: %u -> %u bytes\n",
+                rec ? rec->testcase.packetLen : 0, s_minimBestLen);
+
+  indicators_beep_start(100);
+  oled_ui_set_screen(SCREEN_FAILURE_MENU);
+  s_appState = APP_FAILURE_MENU;
 }
 
 static void update_minimize(void) {
   if (!s_minimRunning) return;
 
+  // BACK cancels minimization at any point
+  ButtonAction btn = buttons_update();
+  if (btn == BTN_BACK) {
+    cancel_minimize("user pressed BACK");
+    return;
+  }
+
   const FailureRecord* rec = failure_get_current();
   if (!rec) {
     s_minimRunning = false;
-    return;
-  }
-
-  // Protocol-aware binary search minimization
-  // Try midpoint between low and high
-  uint32_t tryLen = (s_minimLow + s_minimHigh) / 2;
-
-  // Check if we've converged
-  if (s_minimHigh <= s_minimLow + 1) {
-    s_minimRunning = false;
-    failure_update_minimized(s_minimBestLen);
-
-    Serial.printf("MINIMIZE COMPLETE: %u -> %u bytes\n",
-                  rec->testcase.packetLen, s_minimBestLen);
-
-    indicators_beep_start(100);
-    delay(500);
     oled_ui_set_screen(SCREEN_FAILURE_MENU);
     s_appState = APP_FAILURE_MENU;
     return;
   }
 
-  // Build a modified packet with reduced length
-  Serial.printf("MINIMIZE: trying %u bytes (range %u-%u)...\n", tryLen, s_minimLow, s_minimHigh);
+  heartbeat_update();
 
-  // Reset DUT state
-  heartbeat_reset();
-  crash_detector_clear();
-  delay(200);
+  switch (s_minimStep) {
 
-  // Wait for heartbeat
-  uint32_t waitStart = millis();
-  while (!heartbeat_is_alive() && millis() - waitStart < 2000) {
-    heartbeat_update();
-  }
-
-  if (!heartbeat_is_alive()) {
-    Serial.println("MINIMIZE: DUT not responding, stopping minimization.");
-    s_minimRunning = false;
-    failure_update_minimized(s_minimBestLen);
-    oled_ui_set_screen(SCREEN_FAILURE_MENU);
-    s_appState = APP_FAILURE_MENU;
-    return;
-  }
-
-  // Generate minimized packet: same mutation type, shorter payload
-  uint8_t buffer[64];
-  buffer[0] = Proto::UartSync;
-  buffer[1] = Proto::UartCmd;
-  uint8_t payLen = (uint8_t)(tryLen - Proto::UartFrameOverhead);
-  buffer[2] = payLen;
-  buffer[3] = 0x00;  // Seq low
-  buffer[4] = 0x00;  // Seq high
-
-  uint8_t checksum = buffer[1] ^ buffer[2] ^ buffer[3] ^ buffer[4];
-  for (uint8_t i = 0; i < payLen; i++) {
-    buffer[5 + i] = (uint8_t)(i & 0xFF);
-    checksum ^= buffer[5 + i];
-  }
-
-  // Preserve the mutation's effect
-  if (rec->testcase.mutation == MUT_BAD_CRC) {
-    checksum ^= 0xFF;  // Keep the bad CRC
-  } else if (rec->testcase.mutation == MUT_MALFORMED_HEADER) {
-    buffer[0] = 0xFF;  // Keep corrupted sync
-  } else if (rec->testcase.mutation == MUT_INVALID_LENGTH) {
-    buffer[2] = 0xFF;  // Keep invalid length
-  }
-
-  buffer[5 + payLen] = checksum;
-
-  // Send
-  Serial2.write(buffer, (uint8_t)(tryLen));
-
-  // Check if failure occurs
-  uint32_t checkStart = millis();
-  bool failDetected = false;
-
-  while (millis() - checkStart < 500) {
-    heartbeat_update();
-    if (!heartbeat_is_alive()) {
-      failDetected = true;
+    case MINIM_WAIT_ALIVE: {
+      if (heartbeat_is_alive()) {
+        // Converged?
+        if (s_minimHigh <= s_minimLow + 1) {
+          finish_minimize();
+          return;
+        }
+        s_minimTryLen = (s_minimLow + s_minimHigh) / 2;
+        Serial.printf("MINIMIZE: trying %u bytes (range %u-%u)...\n",
+                      s_minimTryLen, s_minimLow, s_minimHigh);
+        s_minimStep = MINIM_SEND;
+        s_minimStepStartMs = millis();
+      } else if (millis() - s_minimStepStartMs > 2000) {
+        Serial.println("MINIMIZE: DUT not responding, stopping minimization.");
+        finish_minimize();
+      }
       break;
     }
-  }
 
-  if (failDetected) {
-    // This shorter length also fails — keep it, try even smaller
-    s_minimBestLen = tryLen;
-    s_minimLow = tryLen;
-    Serial.printf("MINIMIZE: %u bytes -> STILL FAILS\n", tryLen);
-  } else {
-    // This shorter length passes — minimal failure is larger
-    s_minimHigh = tryLen;
-    Serial.printf("MINIMIZE: %u bytes -> PASSES\n", tryLen);
+    case MINIM_SEND: {
+      // Build a minimized UART packet: same mutation effect,
+      // shorter payload
+      uint8_t buffer[64];
+      buffer[0] = Proto::UartSync;
+      buffer[1] = Proto::UartCmd;
+      uint8_t payLen = (uint8_t)(s_minimTryLen - Proto::UartFrameOverhead);
+      buffer[2] = payLen;
+      buffer[3] = 0x00;  // Seq low
+      buffer[4] = 0x00;  // Seq high
+
+      uint8_t checksum = buffer[1] ^ buffer[2] ^ buffer[3] ^ buffer[4];
+      for (uint8_t i = 0; i < payLen; i++) {
+        buffer[5 + i] = (uint8_t)(i & 0xFF);
+        checksum ^= buffer[5 + i];
+      }
+
+      // Preserve the mutation's effect
+      if (rec->testcase.mutation == MUT_BAD_CRC) {
+        checksum ^= 0xFF;  // Keep the bad CRC
+      } else if (rec->testcase.mutation == MUT_MALFORMED_HEADER) {
+        buffer[0] = 0xFF;  // Keep corrupted sync
+      } else if (rec->testcase.mutation == MUT_INVALID_LENGTH) {
+        buffer[2] = 0xFF;  // Keep invalid length
+      }
+
+      buffer[5 + payLen] = checksum;
+
+      // Send
+      Serial2.write(buffer, (uint8_t)(s_minimTryLen));
+
+      s_minimStep = MINIM_OBSERVE;
+      s_minimStepStartMs = millis();
+      break;
+    }
+
+    case MINIM_OBSERVE: {
+      if (!heartbeat_is_alive() && heartbeat_has_signal()) {
+        // Shorter length also fails — keep it, try even smaller
+        s_minimBestLen = s_minimTryLen;
+        s_minimLow = s_minimTryLen;
+        Serial.printf("MINIMIZE: %u bytes -> STILL FAILS\n", s_minimTryLen);
+        crash_detector_clear();
+        s_minimStep = MINIM_WAIT_ALIVE;
+        s_minimStepStartMs = millis();
+      } else if (millis() - s_minimStepStartMs >= 500) {
+        // Shorter length passes — minimal failure is larger
+        s_minimHigh = s_minimTryLen;
+        Serial.printf("MINIMIZE: %u bytes -> PASSES\n", s_minimTryLen);
+        s_minimStep = MINIM_WAIT_ALIVE;
+        s_minimStepStartMs = millis();
+      }
+      break;
+    }
+
+    default:
+      break;
   }
 
   oled_ui_redraw();
@@ -873,10 +998,15 @@ static void process_serial_commands(void) {
         if (strcmp(s_serialBuf, "START") == 0) {
           if (s_appState == APP_MENU) {
             start_campaign();
+          } else {
+            Serial.println("Cannot start now — finish or stop the current activity first.");
           }
         } else if (strcmp(s_serialBuf, "STOP") == 0) {
           if (s_selectedProtocol == PROTO_I2C) i2c_fuzzer_deinit();
           campaign_stop();
+          s_replayRunning = false;
+          s_minimRunning = false;
+          crash_detector_clear();
           s_appState = APP_MENU;
           oled_ui_set_screen(SCREEN_MAIN_MENU);
         } else if (strcmp(s_serialBuf, "PAUSE") == 0) {
@@ -885,7 +1015,9 @@ static void process_serial_commands(void) {
           Serial.printf("State: %s\n", s_appState == APP_FUZZING ? "FUZZING" : "IDLE");
           Serial.printf("Protocol: %s\n", ProtocolNames[s_selectedProtocol]);
           Serial.printf("Packets: %u\n", campaign_get_packet_count());
-          Serial.printf("Heartbeat: %s\n", heartbeat_is_alive() ? "OK" : "LOST");
+          Serial.printf("Heartbeat: %s%s\n",
+                        heartbeat_is_alive() ? "OK" : "LOST",
+                        heartbeat_has_signal() ? "" : " (NO SIGNAL — DUT not connected?)");
           const CampaignStats* stats = campaign_get_stats();
           Serial.printf("ACKs: %u, NACKs: %u, Timeouts: %u\n",
                         stats->totalAcks, stats->totalNacks, stats->totalNoResponse);
@@ -905,13 +1037,16 @@ static void process_serial_commands(void) {
           campaign_init();
           failure_init();
           failure_store_init();
+          s_replayRunning = false;
+          s_minimRunning = false;
+          crash_detector_clear();
           s_appState = APP_MENU;
           oled_ui_set_screen(SCREEN_MAIN_MENU);
           Serial.println("All state reset.");
         } else if (strcmp(s_serialBuf, "HELP") == 0) {
           Serial.println("Commands:");
-          Serial.println("  START   — Start test campaign");
-          Serial.println("  STOP    — Stop current campaign");
+          Serial.println("  START   — Start test campaign (waits for DUT heartbeat)");
+          Serial.println("  STOP    — Stop current activity");
           Serial.println("  PAUSE   — Pause/resume campaign");
           Serial.println("  STATUS  — Show current status");
           Serial.println("  EXPORT  — Export all failures");
@@ -921,6 +1056,7 @@ static void process_serial_commands(void) {
           Serial.println("  SIMFAIL — Simulate failure (debug)");
           Serial.println("  I2CSTAT  — Show I2C bus statistics");
           Serial.println("  I2CSCAN  — Scan I2C bus for devices");
+          Serial.println("  HBRAW    — Raw heartbeat pin diagnostic (2s sample)");
           Serial.println("  SETUART  — Set protocol to UART");
           Serial.println("  SETSPI   — Set protocol to SPI");
           Serial.println("  SETI2C   — Set protocol to I2C");
@@ -973,6 +1109,34 @@ static void process_serial_commands(void) {
           const FailureRecord* rec = failure_get_current();
           if (rec) failure_store_add(rec);
           Serial.println("DEBUG: Failure frozen. Use REPLAY or EXPORT to test.");
+        } else if (strcmp(s_serialBuf, "HBRAW") == 0) {
+          // Diagnostic: sample the raw heartbeat pin for 2 seconds.
+          // Distinguishes 'wire not connected' from 'monitor logic bug'.
+          Serial.printf("HBRAW: sampling GPIO %d for 2s...\n", Pin::Heartbeat);
+          uint32_t startMs = millis();
+          bool lastLvl = digitalRead(Pin::Heartbeat);
+          uint32_t edges = 0;
+          bool sawHigh = lastLvl;
+          bool sawLow  = !lastLvl;
+          while (millis() - startMs < 2000) {
+            bool lvl = digitalRead(Pin::Heartbeat);
+            if (lvl != lastLvl) {
+              edges++;
+              lastLvl = lvl;
+            }
+            if (lvl) sawHigh = true; else sawLow = true;
+          }
+          Serial.printf("HBRAW: edges=%u levels=%s%s\n",
+                        edges,
+                        sawHigh ? "HIGH " : "", sawLow ? "LOW" : "");
+          if (edges == 0 && !sawHigh) {
+            Serial.println("HBRAW: pin stuck LOW — heartbeat wire likely NOT connected");
+            Serial.println("       Check DUT HB pin -> ESP32 GPIO25, and common GND!");
+          } else if (edges == 0 && sawHigh) {
+            Serial.println("HBRAW: pin stuck HIGH — wire connected but DUT not toggling");
+          } else {
+            Serial.println("HBRAW: signal present — heartbeat monitor should work");
+          }
         } else if (strcmp(s_serialBuf, "RESULT") == 0) {
           result_calculate();
           result_print_report();

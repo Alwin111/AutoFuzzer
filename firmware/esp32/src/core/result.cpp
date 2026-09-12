@@ -1,6 +1,7 @@
 #include "result.h"
 #include "campaign.h"
 #include "failure.h"
+#include "../monitoring/heartbeat.h"
 
 // ============================================
 // Internal scores
@@ -18,7 +19,7 @@ static TestResult s_result = RESULT_NONE;
 // Score Calculator
 // ============================================
 static uint8_t calc_score(uint32_t good, uint32_t total) {
-  if (total == 0) return 100;  // No tests = no failures observed
+  if (total == 0) return 0;  // No evidence — cannot award a perfect score
   if (good >= total) return 100;
   return (uint8_t)((good * 100) / total);
 }
@@ -30,9 +31,10 @@ void result_calculate_all(void) {
   const CampaignStats* stats = campaign_get_stats();
   uint8_t failCount = failure_get_count();
 
-  // Communication score: ACK rate vs total responses
+  // Communication score: ACK rate vs total responses.
+  // No responses at all = no communication evidence = score 0.
   uint32_t totalResp = stats->totalAcks + stats->totalNacks;
-  s_commScore = calc_score(stats->totalAcks, totalResp);
+  s_commScore = (totalResp == 0) ? 0 : calc_score(stats->totalAcks, totalResp);
 
   // Boundary handling: valid + empty + max should all ACK
   // If any boundary packets caused failures, reduce score
@@ -72,13 +74,16 @@ void result_calculate_all(void) {
   uint32_t hbTimeouts = stats->totalHeartbeatTimeouts;
   uint32_t totalPkts = stats->totalPackets;
   if (totalPkts == 0) {
-    s_recoveryScore = 100;
+    s_recoveryScore = 0;  // Nothing was tested — no recovery evidence
   } else {
     s_recoveryScore = calc_score(totalPkts - hbTimeouts, totalPkts);
   }
 
-  // Heartbeat stability
-  s_hbScore = (hbTimeouts == 0) ? 100 : (hbTimeouts <= 2 ? 75 : (hbTimeouts <= 5 ? 50 : 0));
+  // Heartbeat stability — requires actual heartbeat evidence.
+  // A silent line (DUT never connected) must not score 100.
+  s_hbScore = heartbeat_has_signal()
+                ? (hbTimeouts == 0 ? 100 : (hbTimeouts <= 2 ? 75 : (hbTimeouts <= 5 ? 50 : 0)))
+                : 0;
 
   // Random input handling: random + adaptive mutations
   s_randScore = 100;
@@ -101,11 +106,14 @@ void result_calculate_all(void) {
      s_recoveryScore * 15 + s_hbScore * 10 + s_randScore * 10) / 100
   );
 
-  // Determine verdict
-  if (failCount == 0 && stats->totalPackets > 0) {
-    s_result = RESULT_PASS;
-  } else if (failCount > 0) {
+  // Determine verdict.
+  // PASS requires both packets sent AND at least one DUT response —
+  // a campaign against a silent/disconnected DUT is INCONCLUSIVE,
+  // never a false PASS.
+  if (failCount > 0) {
     s_result = RESULT_FAIL;
+  } else if (stats->totalPackets > 0 && totalResp > 0) {
+    s_result = RESULT_PASS;
   } else {
     s_result = RESULT_INCONCLUSIVE;
   }

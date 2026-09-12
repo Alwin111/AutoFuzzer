@@ -43,7 +43,12 @@ bool crash_detector_update(void) {
 
   if (hbAlive) return false;
 
-  // Heartbeat has timed out — this is a potential failure
+  // No heartbeat signal AT ALL = DUT not connected or not toggling.
+  // That is not a crash — main.cpp aborts the campaign as
+  // INCONCLUSIVE. Never freeze a failure for a silent line.
+  if (!heartbeat_has_signal()) return false;
+
+  // Heartbeat was seen but has now timed out — potential failure
   s_failHeartbeatAge = heartbeat_get_age_ms();
 
   // Check if DUT has responded recently
