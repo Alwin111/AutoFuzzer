@@ -354,6 +354,46 @@ pio device monitor -b 115200
 
 ---
 
+## Web Dashboard (Real-Time Monitor)
+
+A browser-based dashboard that connects to the ESP32 via serial and displays live test data.
+
+### Launch
+
+```bash
+cd tools/web_dashboard
+python3 server.py                    # auto-detect ESP32 port
+python3 server.py --port /dev/ttyUSB0  # specify port
+```
+
+Then open **http://localhost:5000** in your browser.
+
+### Features
+
+| Panel | What It Shows |
+| :--- | :--- |
+| **DUT Status** | Heartbeat OK/LOST with pulse animation |
+| **Campaign** | State, protocol, profile, phase, mutation — parsed live from serial |
+| **ACK/NACK/Error Gauges** | Ring gauges showing response distribution |
+| **Counters** | Total packets, ACKs, NACKs, failures, mutations used |
+| **Packet Timeline** | Live canvas chart — packets, ACKs, NACKs, failures over time |
+| **Mutation Distribution** | Bar chart of mutation types used in current campaign |
+| **Serial Monitor** | Color-coded serial log with auto-scroll |
+| **Quick Commands** | One-click buttons: START, STOP, RESET, UART, SPI, I2C, REPLAY, SIMFAIL |
+| **Verdict Banner** | PASS (green) / FAIL (red) / WAITING (blue pulse) |
+| **Timeline** | Chronological events — campaign start, phase changes, failures |
+
+### Color Coding
+
+| Color | Meaning |
+| :--- | :--- |
+| 🟢 Green | Protocol set, heartbeat OK, ACKs, campaign start |
+| 🟡 Yellow | NACKs, heartbeat timeout warnings |
+| 🔴 Red | Failures, crash detected, heartbeat lost |
+| 🔵 Cyan | Phase changes, packets |
+
+---
+
 ## PC Companion Tool
 
 The PC companion is an optional Python tool that connects to the ESP32 via USB serial.
@@ -518,16 +558,22 @@ AutoFuzzer/
 │   ├── protocol.md
 │   └── hardware/
 ├── tools/
-│   └── pc_companion/
-│       ├── __init__.py
-│       ├── connection.py
-│       ├── reporter.py
-│       ├── database.py
-│       ├── builder.py
-│       ├── fixer.py
-│       ├── regression.py
-│       ├── cli.py
-│       └── requirements.txt
+│   ├── pc_companion/
+│   │   ├── __init__.py
+│   │   ├── connection.py
+│   │   ├── reporter.py
+│   │   ├── database.py
+│   │   ├── builder.py
+│   │   ├── fixer.py
+│   │   ├── regression.py
+│   │   ├── logic_analyzer.py
+│   │   ├── cli.py
+│   │   └── requirements.txt
+│   └── web_dashboard/
+│       ├── server.py           # Flask + SocketIO serial bridge
+│       ├── launch.sh           # Quick launch script
+│       └── templates/
+│           └── index.html      # Full dashboard UI
 ├── reports/
 │   ├── 2026-08-20_TEST_001/
 │   │   ├── report.json
