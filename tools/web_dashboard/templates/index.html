@@ -480,6 +480,12 @@ canvas {
     color: var(--green);
 }
 
+.hb-indicator.waiting {
+    background: var(--accent-dim);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+}
+
 .hb-indicator.dead {
     background: var(--red-dim);
     border: 1px solid var(--red);
@@ -1158,6 +1164,9 @@ function updateUI() {
     if (state.connected) {
         dot.classList.add('online');
         txt.textContent = state.port || 'Connected';
+    } else if (state.reconnecting) {
+        dot.classList.remove('online');
+        txt.textContent = 'Reconnecting (plug USB back)...';
     } else {
         dot.classList.remove('online');
         txt.textContent = 'Disconnected';
@@ -1171,30 +1180,35 @@ function updateUI() {
     setText('phaseVal', state.phase || 'IDLE');
     setText('mutationVal', state.mutation || 'NONE');
     
-    // Heartbeat
+    // Heartbeat — show WAITING until a campaign gives real evidence
     const hbInd = document.getElementById('hbIndicator');
     const hbDot = document.getElementById('hbDot');
     const hbText = document.getElementById('hbText');
+    const running = (state.state === 'RUNNING' || state.state === 'REPLAY');
     if (state.heartbeat_ok) {
         hbInd.className = 'hb-indicator alive';
         hbDot.className = 'hb-dot alive';
         hbText.textContent = 'HEARTBEAT OK';
-    } else {
+    } else if (running || state.heartbeat_ok === false && state.state === 'FAILURE') {
         hbInd.className = 'hb-indicator dead';
         hbDot.className = 'hb-dot';
         hbText.textContent = 'HEARTBEAT LOST';
+    } else {
+        hbInd.className = 'hb-indicator waiting';
+        hbDot.className = 'hb-dot';
+        hbText.textContent = 'WAITING';
     }
     
     // Progress
-    const pct = state.duration_ms > 0 
-        ? Math.min(100, (state.elapsed_ms / state.duration_ms) * 100) 
+    const pct = state.duration_s > 0 
+        ? Math.min(100, (state.elapsed_s / state.duration_s) * 100) 
         : 0;
     document.getElementById('progressFill').style.width = pct + '%';
-    setText('timeVal', `${state.elapsed_ms}/${state.duration_ms}s`);
-    setText('packetsVal', state.test_num);
+    setText('timeVal', `${state.elapsed_s}/${state.duration_s}s`);
+    setText('packetsVal', state.packets);
     
     // Counters
-    setText('totalPackets', state.test_num);
+    setText('totalPackets', state.packets);
     setText('totalAcks', state.acks);
     setText('totalNacks', state.nacks);
     setText('totalFailures', state.failures);
@@ -1218,6 +1232,12 @@ function updateUI() {
     } else if (state.state === 'FAILURE') {
         vb.textContent = 'FAILURE DETECTED';
         vb.className = 'verdict-banner fail';
+    } else if (state.state === 'PROTOCOL_CHECK') {
+        vb.textContent = 'PROTOCOL CHECK — WAITING FOR DUT';
+        vb.className = 'verdict-banner testing';
+    } else if (state.reconnecting) {
+        vb.textContent = 'RECONNECTING';
+        vb.className = 'verdict-banner testing';
     } else {
         vb.textContent = 'WAITING';
         vb.className = 'verdict-banner testing';
@@ -1247,6 +1267,7 @@ function setStateColor(id, s) {
     else if (s === 'FAILURE') el.classList.add('fail');
     else if (s === 'COMPLETE') el.classList.add('ok');
     else if (s === 'PAUSED') el.classList.add('warn');
+    else if (s === 'PROTOCOL_CHECK') el.classList.add('warn');
 }
 
 // ============================================================
@@ -1351,12 +1372,12 @@ function resizeCanvas() {
 }
 
 function updateChart() {
-    // Record packet count every second
+    // Called by updateUI and by the 2s auto-poll; samples once per second
     const now = Date.now();
     if (chartData.length === 0 || now - (chartData[chartData.length-1]?.t || 0) > 1000) {
         chartData.push({
             t: now,
-            packets: state.test_num || 0,
+            packets: state.packets || 0,
             acks: state.acks || 0,
             nacks: state.nacks || 0,
             failures: state.failures || 0,
@@ -1369,6 +1390,17 @@ function updateChart() {
         drawChart();
     }
 }
+
+// Auto-refresh state every 2s so counters stay live even without serial traffic
+setInterval(async () => {
+    try {
+        const resp = await fetch('/api/status');
+        const st = await resp.json();
+        state = st;
+        updateUI();
+        updateChart();
+    } catch (e) { /* server busy */ }
+}, 2000);
 
 function drawChart() {
     if (!chartCtx || chartData.length < 2) return;
