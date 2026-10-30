@@ -44,7 +44,7 @@ CH3           SPI MOSI      GPIO 23      ESP32 → DUT
 CH4           SPI MISO      GPIO 19      DUT → ESP32
 CH5           SPI CS        GPIO 5       ESP32 → DUT
 CH6           I2C SDA       GPIO 21      Bidirectional
-CH7           Heartbeat     GPIO 25      DUT → ESP32
+CH7           Heartbeat     GPIO 26      DUT → ESP32
 ```
 
 ### Probe Connection

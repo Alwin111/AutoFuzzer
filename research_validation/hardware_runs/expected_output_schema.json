@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "hardware_campaign_result",
+  "type": "object",
+  "required": [
+    "session_id",
+    "hardware_connected",
+    "target",
+    "protocol",
+    "firmware_version",
+    "communication_health",
+    "campaign_profile",
+    "packets_sent",
+    "acks",
+    "nacks",
+    "no_response",
+    "heartbeat_timeouts",
+    "verdict",
+    "score",
+    "fault_category_counts",
+    "malformed_packet_nacks",
+    "execution_mode"
+  ],
+  "properties": {
+    "session_id": {"type": "string"},
+    "hardware_connected": {"type": "boolean"},
+    "target": {"type": "string"},
+    "protocol": {"type": "string", "enum": ["uart", "spi", "i2c"]},
+    "firmware_version": {"type": "string"},
+    "communication_health": {"type": "string", "enum": ["verified", "degraded", "failed"]},
+    "campaign_profile": {"type": "string"},
+    "packets_sent": {"type": "integer", "minimum": 0},
+    "acks": {"type": "integer", "minimum": 0},
+    "nacks": {"type": "integer", "minimum": 0},
+    "no_response": {"type": "integer", "minimum": 0},
+    "heartbeat_timeouts": {"type": "integer", "minimum": 0},
+    "verdict": {"type": "string", "enum": ["PASS", "FAIL", "INCONCLUSIVE"]},
+    "score": {"type": "integer", "minimum": 0, "maximum": 100},
+    "fault_category_counts": {
+      "type": "object",
+      "properties": {
+        "boundary": {"type": "integer", "minimum": 0},
+        "malformed": {"type": "integer", "minimum": 0},
+        "random": {"type": "integer", "minimum": 0}
+      },
+      "additionalProperties": false
+    },
+    "malformed_packet_nacks": {"type": "integer", "minimum": 0},
+    "execution_mode": {"type": "string", "enum": ["simulation", "hardware"]}
+  }
+}

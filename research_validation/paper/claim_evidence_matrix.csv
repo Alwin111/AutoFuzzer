@@ -1,0 +1,21 @@
+claim_id,claim,evidence,source,status
+C01,ESP32-based standalone UART fuzzing controller that acts as liveness oracle,authoritative,<i>AutoFuzzer: A Standalone ESP32-Based UART Fuzzing Platform for Embedded Firmware Security and Robustness Testing</i> (paper Fig.1, Section III-A),verified
+C02,UART framing SYNC(0xA5),CMD(0x01),LEN,SEQ_LO,SEQ_HI,checksum; DUT response 0x5A,SEQ,status (0x00/0x02/0x03),verified,<i>uart_fuzzer.cpp / uart_parser.cpp</i>,verified
+C03,Ten mutation classes defined (seven used in evaluation),verified,<i>types.h</i> (MUT_VALID..MUT_SEQ_ANOMALY),needs_clarify
+C04,Payload max 32 bytes reference-DUT,verified,<i>uart_fuzzer.cpp</i> (UartMaxPayload=32),verified
+C05,Heartbeat monitoring of DUT liveness on GPIO26,verified,<i>Pin::Heartbeat = 26</i>,verified_26_vs_25
+C06,Weighted 0-100 robustness score (six categories, Eq.3),verified,<i>result.cpp (calc and weights)</i>,verified
+C07,Verdict rules: PASS/FAIL/INCONCLUSIVE,partially_verified,<i>result.cpp verdict code + paper Sec.III-G</i>,needs_clarify
+C08,45 host-side Python tests pass,verified,<i>tests/test_core.py</i>: 45 passed,verified
+C09,Single captured UART run: 258 pkts, 0 ACK, 14 NACK, 0 fails, score 75/100,verified,<i>serial-log captures in earlier session</i>,verified_log
+C10,SPI and I2C stubs (not validated),verified,<i>spi_fuzzer.cpp</i>,<i>i2c_fuzzer.cpp</i>,passive,needs_clarify
+C11,41 archived reports,28 PASS 13 FAIL (unverifiable test data),verified,<i>reports/</i> count 41,verified
+C12,Heartbeat oracle = only detection (no silent memory corruption),verified,<i>heartbeat.cpp</i>,verified
+C13,No seeded-fault sensitivity / baselines / repetitions,verified,<i>paper Sec.VIII</i>,verified
+C14,SPI/I2C fuzzing planned,not_started,<i>roadmap</i>,planned
+C15,No quantitative performance measurements made,verified,<i>paper Sec.VI-B</i>,verified
+C16,Score "75/100" in paper equals config from code,verified,<i>result.cpp demo rules</i>,verified
+C17,No physical hardware results in paper,verified,<i>paper Sec.IV</i>,verified
+C18,Demo mode auto-passes score to 100 when no failures,verified,<i>result.cpp demo block</i>,verified
+C19,Parser is response-based, no memory corruption visibility,verified,<i>uart_parser.cpp</i>,verified
+C20,GPIO25 in paper vs GPIO26 in code for heartbeat,verified,<i>paper Table III vs Pin::Heartbeat</i>,verified_26_vs_25

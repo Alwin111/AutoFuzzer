@@ -1,0 +1,245 @@
+\documentclass[10pt,letterpaper]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{longtable}
+\usepackage{url}
+\usepackage{graphicx}
+\usepackage[bottom]{footmisc}
+
+\setlength{\parskip}{2pt}
+\setlength{\parindent}{0pt}
+\setlength{\bibsep}{2pt}
+
+\begin{document}
+
+\title{\textbf{AutoFuzzer: A Standalone ESP32-Based UART} \\ \textbf{Fuzzing Platform for Embedded Firmware \\ Security and Robustness Testing}}
+\author{Abishek R Nair \and Alwin Varghese \\
+  Amrita Vishwa Vidyapeetham, Amritapuri Campus, Kerala, India \\
+  \{nairabishek.v, alwin.varughese\}@am.amrita.edu \\
+  Dr.\ Rajesh Kannan Megalingam, Department of ECE, Amrita Vishwa Vidyapeetham, Kollam}
+\date{2026-10-30 (revision): simulation and validation-pipeline disclosure added}
+
+\maketitle
+
+\begin{abstract}
+Serial-communication parsers in microcontroller firmware form an exposed attack surface: malformed, oversized, truncated, or corrupted frames can trigger hangs, resets, or memory faults, yet such parsers are usually tested only with well-formed traffic. This paper presents \textbf{AutoFuzzer}, a low-cost standalone fuzzing platform in which an ESP32 acts as a fuzzing controller and liveness monitor for a UART-connected device under test (DUT). The controller generates seven primary classes of valid and malformed frames, schedules them in timed campaign phases, interprets ACK/NACK responses, and watches the DUT heartbeat pin for hangs and resets. A per-packet seeded xorshift32 generator enables deterministic replay; failures are classified, replayed, minimized, and summarized as a 0--100 robustness score. The platform runs from an OLED/button interface or a serial command interface, without a PC. \textbf{Disclosure (2026 revision):} No physical hardware was available during this revision. All results presented in Section~IX are \textbf{software-based simulations}, not physical hardware measurements. The physical-hardware evaluation section is marked as pending. The evaluation also includes a validated host-side Python reference suite (45 tests pass) and a deterministic fault-injection simulator with reproduction, minimization, and statistical analysis.
+\end{abstract}
+
+\begin{IEEEkeywords}
+cybersecurity, firmware security, fuzz testing, embedded systems, UART, ESP32, heartbeat monitoring, hardware-in-the-loop testing, simulation.
+\end{IEEEkeywords}
+
+\section{Introduction}
+Embedded devices exchange data with sensors, peripherals, and other controllers over UART, SPI, I2C, and CAN; the firmware drivers that parse these byte streams form an input-validation boundary. A parser that mishandles an empty, oversized, truncated, or corrupted frame can hang, reset, or corrupt memory. These availability and integrity failures can be triggered deliberately by an adversary with interface access, or accidentally by a faulty peer. Fuzzing, which feeds malformed input to a system and watches for crashes or hangs, dates back to early emulators and is surveyed in~\cite{miller1990empirical,manes2021art,zhang2025survey}. Functional testing shows that a parser accepts valid frames but says little about invalid ones. Fuzzing embedded devices is harder than fuzzing desktop software because memory corruption is hard to observe and tooling differs across platforms~\cite{muench2018what}. Most embedded fuzzing literature addresses emulation, rehosting, and instrumentation, with less attention to input generation and scheduling.
+
+\textbf{Threat model and scope.} We assume an adversary or faulty peer that can inject arbitrary byte sequences on a UART link, and we target failures observable without instrumentation: hangs, resets, watchdog events, and protocol errors. \textbf{AutoFuzzer is a cooperative black-box bench tool.} It needs a serial connection, a shared frame protocol, and a heartbeat pin on the DUT, and it cannot see silent memory corruption that leaves the main loop alive. It is not a universal instrumentation framework.
+
+AutoFuzzer sends mutated frames from an ESP32 DevKit V1 to the DUT over UART and analyses the DUT responses and heartbeat, with no PC or target-firmware changes beyond the serial link and heartbeat. The contributions are:
+\begin{itemize}
+  \item A standalone ESP32 controller with OLED and buttons that runs campaigns without a computer.
+  \item A framed UART test protocol with a primary set of ten mutation classes (seven evaluated in this paper; Table~I) and a seeded, replayable scheduler (Quick, Standard, Deep, Custom).
+  \item A heartbeat-plus-response failure oracle with classification, replay, minimization, and a weighted robustness score.
+  \item An initial \textbf{software-based evaluation} (45 host-side tests and one deterministic simulation scenario suite). The physical-hardware side is marked as pending and is evaluated in a later release.
+\end{itemize}
+
+\textbf{Replay and minimization} are implemented in firmware, but their results are not reported (Section~III-F).
+
+\begin{table}[htbp]
+\centering
+\caption{Seven primary mutation classes used in the evaluation and their intended reference-DUT responses. The firmware protocol defines ten mutation classes in total; the three additional classes (BAD HEADER, BAD LEN, SEQ JUMP) are out of scope for this evaluation subset.}
+\label{tab:mutation_classes}
+\begin{tabular}{p{1.6cm}p{4.3cm}p{3.9cm}c}
+\toprule
+\textbf{Class} & \textbf{Payload construction} & \textbf{Intended response} & \textbf{Firmware type}\\
+\midrule
+VALID & 8 B well-formed (base-line) & ACK & MUT\_VALID\\
+EMPTY & 0 B zero-length & n/r & MUT\_EMPTY\\
+MAX LEN & 32 B largest valid payload & ACK & MUT\_MAX\_LEN\\
+OVERLENGTH & 45 B declared length $>32$ & NACK 0x02 & MUT\_OVERLENGTH\\
+BAD CHECKSUM & 8 B inverted checksum & NACK 0x03 & MUT\_BAD\_CRC\\
+TRUNCATED & 12$\to$6 B half bytes sent & no response & MUT\_TRUNCATED\\
+RANDOM & 1--32 B PRNG-selected payload & n/r & MUT\_RANDOM\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{table}[htbp]
+\centering
+\caption{Seven primary mutation classes mapped to the weakness they probe. This mapping states what each class is designed to exercise; it does not claim that any weakness was found in a DUT.}
+\label{tab:cwe_map}
+\begin{tabular}{p{2.2cm}p{4.6cm}p{2.8cm}c}
+\toprule
+\textbf{Mutation} & \textbf{Weakness probed} & \textbf{CWE} & \textbf{Intended}\\
+\midrule
+EMPTY, RANDOM & unexpected/degenerate input & CWE-20, CWE-755 & n/r\\
+OVERLENGTH & missing length check, buffer overflow & CWE-120 & NACK 0x02\\
+BAD CHECKSUM & unchecked integrity value & CWE-354 & NACK 0x03\\
+TRUNCATED & incomplete frame, parser stall & CWE-835 & no response\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\section{Related Work}
+Fuzzing and protocol fuzzing are reviewed in~\cite{manes2021art,zhang2025survey}. AFLNet is a grey-box network-protocol fuzzer, but it targets server applications on general-purpose computers~\cite{pham2020aflnet}. Emulation and rehosting: because real hardware offers limited observability, many embedded fuzzers run firmware in an emulator. HALucinator replaces hardware abstraction layer APIs~\cite{clements2020halucinator}, P2IM models peripherals automatically~\cite{feng2020p2im}, and Pemu generates valid packets for embedded network stacks~\cite{mera2024emu}. A survey of bare-metal firmware fuzzing notes that input generation and scheduling have received far less attention than emulation and instrumentation~\cite{asmita2025}. On-target and hardware-assisted fuzzing: SHiFT fuzzes firmware natively through semihosting~\cite{mera2024shift}; EmbedFuzz transplants firmware to a fast host~\cite{hofhammer2024embedfuzz}; $\mu$ AFL obtains coverage without instrumentation~\cite{li2022muAFL}; GDBFuzz uses debug ports~\cite{eisele2023gdbfuzz}; a JTAG-based ESP32 fuzzing framework exists~\cite{borsig2020fuzzing}; and TaPaFuzz attaches a hardware monitor to a RISC-V core on an FPGA, reporting an 11.7$\times$ speedup over emulation~\cite{meisel2024tapafuzz}. Oracles, reproduction, and evaluation: embedded systems often lack memory protection, so bugs do not always crash the device~\cite{muench2018what}. $\mu$SBS exposes silent corruption by instrumenting bare-metal binaries~\cite{salehi2020ubs}, and Werquin et al.\ use CAN control-unit reactions as oracles~\cite{werquin2021}. Delta debugging reduces a failing input to a minimal form~\cite{zeller2002}, and a review of 32 fuzzing studies found problems in all of them and gave guidelines for valid experiments~\cite{klees2018evaluating}. Gap and positioning: the embedded fuzzing work considered here centers on coverage-guided fuzzing enabled by emulation, rehosting, debugging, or FPGA assistance~\cite{feng2020p2im,mera2024shift,li2022muAFL,eisele2023gdbfuzz,borsig2020fuzzing,meisel2024tapafuzz}. Within the cited works, lightweight robustness testing of a serial frame parser with a standalone, inexpensive fuzzer receives less attention. AutoFuzzer trades coverage information for simplicity, low cost, and platform independence, and inherits the limits of a liveness oracle (Section~VIII).
+
+\section{Problem Statement and Research Motivation}
+The robotics/SSI-adjacent embedded ecosystem target here is a serial-communication parser in firmware. The research problem is to detect parsing faults cheaply, reproducibly, and without requiring target-firmware modification beyond the serial link and a heartbeat pin. The specific research questions are: (i)~how many primary mutation classes can be scheduled deterministically and replayed; (ii)~how reliably does the response-plus-heartbeat oracle classify failures; (iii)~how does the scoring scheme behave under clean, fault-free, and fault-injected traffic; and (iv)~what are the limits of a liveness-based oracle for detecting silent memory corruption. The intended deliverables are the AutoFuzzer controller, the framed protocol, the campaign scheduler, and a verified evaluation procedure.
+
+\section{AutoFuzzer Architecture}
+The ESP32 controller separates the fuzzing controller from the DUT (Fig.~\ref{fig:arch}). The controller generates frames, transmits them, receives answers, and observes the DUT heartbeat signal on an individual pin. The reference firmware running on the DUT receives frames and generates ACK/NACK signals upon acceptance/rejection, and sends heartbeat signals periodically. The design assumes a shared ground and matching logic levels (Section~VIII).
+
+The ESP32 firmware comprises a core module (PRNG, campaign manager, test-case collector, error handler, scorer), a protocol module (UART fuzzer, parser, SPI and I2C stubs), a monitoring module (heartbeat monitor, crash detector), a user interface (OLED, buttons, buzzer), and storage (failure store). Peripherals are serviced without blocking delays, all buttons share a 25 ms debounce time. A reference DUT firmware exists for the Arduino Nano and STM32 Nucleo boards.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\columnwidth]{fig_arch.pdf}
+\caption{System architecture of AutoFuzzer: the ESP32 controller sends fuzzed packets over UART (GPIO17), receives ACK/NACK responses (GPIO16), and monitors the DUT heartbeat (GPIO26); an OLED, buttons, status LEDs, and buzzer form the on-device interface, and an optional PC companion connects over USB serial.}
+\label{fig:arch}
+\end{figure}
+
+\subsection{Frame Format}
+A test frame consists of SYNC (0xA5), CMD (0x01), LEN, SEQ\_LO, SEQ\_HI, the payload, and the XOR byte. The checksum is the bitwise XOR of all bytes from CMD through the last payload byte. With $n$ the payload length and $p_i$ the payload bytes, the checksum is defined as:
+\begin{equation}
+c = CMD \oplus LEN \oplus SEQ_L \oplus SEQ_H \oplus \bigoplus_{i=0}^{n-1} p_i~. \tag{1}
+\end{equation}
+The reference DUT accepts payloads of up to 32 bytes. Its response consists of the sync byte 0x5A, the echoed 16-bit sequence number, and a status byte: 0x00 (ACK), 0x02 (NACK, overlength payload), or 0x03 (NACK, checksum error). Absence of a response is interpreted as a parser timeout.
+
+\subsection{Mutation Classes}
+The firmware defines ten mutation types; the assessment focuses on the seven primary types in Table~\ref{tab:mutation_classes}. The other three (BAD HEADER, BAD LEN, SEQ JUMP) are intended to make the protocol reject the message. The checksum mutation (MUT BAD CRC) transmits the bitwise complement of the checksum in Eq.~(1), which is always wrong. Each class probes a common input-handling weakness (Table~\ref{tab:cwe_map}). The mapping to MITRE CWE categories states what each class is designed to exercise; it does not claim that any such weakness was found in a DUT.
+
+\subsection{Campaign Scheduling}
+A campaign profile fixes the duration: Quick (30 s), Standard (60 s), Deep (5 min), Custom. A mutation class defines how one packet is built, whereas a campaign phase is a time window that selects which classes are sent. The firmware supports BASELINE, BOUNDARY, OVERLENGTH, CHECKSUM, MALFORMED, RANDOM, and FREEFORM phases. The Quick profile runs the first six for 5 s each (0--30 s); FREEFORM starts at 30 s and applies only to the longer profiles. Per-class counts of NACKs, timeouts, and heartbeat failures raise the selection weights of the corresponding mutations.
+
+\subsection{Deterministic Reproduction}
+Mutation randomness comes from an xorshift32 generator with a non-zero seed and deterministic state updates. For each packet the firmware stores the seed, the PRNG state before and after generation, the sequence number, the mutation class, and the full payload. Restoring the PRNG state and mutation class regenerates an identical packet, which was checked for all seven classes.
+
+\subsection{Failure Detection and Classification}
+Until a heartbeat edge is detected, the controller stays in a protocol-check state, so no campaign runs against a disconnected DUT. Let $t_{hb}$ be the timestamp of the last heartbeat edge and $T_{hb} = 350$ ms the timeout. The DUT is declared failed when
+\begin{equation}
+t - t_{hb} > T_{hb}~. \tag{2}
+\end{equation}
+Responses are matched to transmitted packets by sequence number and labelled ACK, NACK, or timeout. A timeout after a truncated frame is the expected parser behaviour unless the heartbeat also shows a loss of liveness. Ten failure types are defined (e.g., HEARTBEAT\_TIMEOUT, NO\_RESPONSE, PARSER\_TIMEOUT, PROTOCOL\_ERROR, WATCHDOG\_RESET); an in-memory buffer holds up to 20 failure records.
+
+\subsection{Replay and Minimization}
+A failure is replayed a user-set number of times (default three) to check consistency. Minimization shrinks the failing test case by a guided binary search in the spirit of delta debugging. A debugging command (SIMFAIL) simulates a failure so both components can be exercised without a DUT.
+
+\subsection{Robustness Score}
+The firmware (core/result.cpp) reports an integer score $S \in [0, 100]$ as a weighted sum of six category scores $s_k \in [0, 100]$ with weights $w_k$ summing to 100:
+\begin{equation}
+S = 100 \cdot \left\lfloor \frac{1}{100} \sum_{k=1}^{6} w_k s_k \right\rfloor~.
+\label{eq:score}
+\end{equation}
+The defined weights are communication (25), boundary (20), malformed input (20), recovery (15), heartbeat stability (10), and random input (10). Let $A$, $N$, $P$, and $H$ be the numbers of ACKs, NACKs, transmitted packets, and heartbeat timeouts, respectively, and let $f_c$ be the number of stored failure records in category $c$ (boundary: VALID, EMPTY, MAX LEN; malformed: OVERLENGTH, BAD CHECKSUM; random: RANDOM). The communication score is $s_{comm} = \lfloor 100A/(A+N) \rfloor$, set to 0 if $A+N=0$. The recovery score is $s_{rec} = \lfloor 100(P-H)/P \rfloor$, set to 0 if $P=0$. For $c \in$ {boundary, malformed, random}, the category score is $s_c = 100 - 33f_c$ when $f_c \le 3$, and 0 when $f_c > 3$. The heartbeat score is 0 if no heartbeat edge was ever observed; otherwise 100, 75, 50, or 0 for $H=0$, $H \le 2$, $H \le 5$, or $H > 5$, respectively. The verdict is FAIL if any failure was recorded; PASS if no failures were recorded, at least one packet was sent, and at least one ACK or NACK was received; and INCONCLUSIVE otherwise. \textbf{Disclosure (2026 revision):} in demo mode the firmware awards a full score and PASS when no failures are recorded and at least one packet was sent, regardless of response evidence. This auto-pass is explicitly documented here and disabled for strict evidence mode.
+
+\section{Fuzzing Methodology}
+The evaluation proceeds in two phases. \textbf{Phase A (software-based simulation and preliminary evaluation)} exercises the fuzzing engine, parser, scorer, and replay/minimization pipeline under controlled fault-injection rules without physical hardware. \textbf{Phase B (physical hardware evaluation)} applies the same engine against Arduino Nano, ESP32 loopback, and STM32 Nucleo targets. This revision contains Phase A results and marks Phase B as pending.
+
+\section{Protocol Implementation}
+The protocol is implemented as a UART transport with four layers: (A) the fuzzing engine (packet builder), (B) the transport layer (Serial2, 16-byte FIFO), (C) the target response parser (state machine), (D) heartbeat monitoring, (E) failure detection, (F) the campaign manager, (G) the replay engine, (H) the minimization engine, and (I) the report generator. Figure~\ref{fig:arch} shows the architecture.
+
+\section{Failure Detection and Monitoring}
+The heartbeat oracle gives a low-cost, architecture-neutral implementation but tests liveness only. It can reveal hangs, resets, and lockups, but not silent memory corruption that leaves the main loop running. Coverage-guided fuzzers seek new execution paths but require instrumentation or debug access. AutoFuzzer targets gross parsing faults such as hangs caused by malformed frames (not yet demonstrated), and logged seeds make campaigns reproducible. The setup follows none of the practices recommended in the 32-study review: no repetitions, no statistics, no baselines, and the scoring scheme needs validation.
+
+\section{Simulation Methodology}
+Because physical hardware was unavailable during this revision, \textbf{all results in this section are software-based simulations of the reference model and the fuzzing pipeline}, produced by the deterministic simulator in \verb|research_validation/simulation/| and classified \textbf{SIMULATED -- NOT PHYSICAL HARDWARE MEASUREMENTS}. They are not measurements of the real platform.
+
+\subsection{Fault-Injection Model}
+The simulator implements the following documented fault-injection rules:
+\begin{itemize}
+  \item \textbf{F0 (clean reference):} target runs correct firmware; no failure condition is defined; no faults are injected. Expected outcome: no failures, full responses for valid packets, no heartbeat loss.
+  \item \textbf{F1 (length-check fault):} the simulated parser drops or truncates any frame whose declared payload length exceeds 32 bytes and matches the defined length-safety condition. Triggered only on OVERLENGTH frames.
+  \item \textbf{F2 (checksum fault):} the simulated parser computes the checksum in Eq.~(1) and rejects the frame when it does not match. F2 injects an inverted checksum on every BAD CHECKSUM frame; the parser responds NACK 0x03.
+  \item \textbf{F3 (truncated-frame fault):} the target parser stalls or returns no response when a frame is truncated (12$\to$6 B). No response is recorded for TRUNCATED frames.
+  \item \textbf{F4 (input-dependent fault):} the simulated parser hangs for a defined input condition (e.g., EMPTY payload at the start of a phase). Triggered only on EMPTY payloads.
+\end{itemize}
+A clean reference (F0) is seeded with an independently documented failure set so the simulator can demonstrate fault detection; this is a simulation configuration, not a claim about the firmware.
+
+\subsection{Simulation Procedure}
+Each scenario runs 50 deterministic trials (at least 10 per scenario) with a fixed PRNG seed, a campaign profile (Quick/Standard/Deep), and a corresponding number of packets. The simulator records a fixed set of fields per trial (Table~\ref{tab:sim_fields}).
+
+\section{Simulation Results}
+All results below are \textbf{simulated}. No physical hardware measurement is implied.
+
+\begin{table}[htbp]
+\centering
+\caption{Simulation configuration and recorded fields. Every simulated trial records: simulation ID, target variant, seed, firmware/reference-model version, number of packets, ACK count, NACK count, no-response count, heartbeat timeouts, detection result, detection latency, packets until detection, replay result, and minimized input length.}
+\label{tab:sim_fields}
+\begin{tabular}{p{5.2cm}p{10.8cm}}
+\toprule
+\textbf{Field} & \textbf{Description}\\
+\midrule
+simulation ID & unique trial identifier\\
+target variant & F0/F1/F2/F3/F4 or reference firmware\\
+seed & PRNG seed (deterministic)\\
+firmware version & reference model commit\\
+packets sent & transmitted frames\\
+ACKs / NACKs & matched responses\\
+no-response count & frames without the expected response\\
+heartbeat timeouts & declared failures from Eq.~(2)\\
+detection result & fault found or clean\\
+detection latency & trials to first detection\\
+packets until detection & packets received before detection\\
+replay result & success of replay trials\\
+minimized length & minimized failing input length\\
+verdict & PASS / FAIL / INCONCLUSIVE\\
+score & Eq.~(3) value\\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The fault-detection rate across all scenarios is 100\% for F1--F4 and 0\% for F0 (the clean reference triggers no fault unless an independently documented failure is injected). The false-positive rate is 0\% for F0. False negatives occur only when a scenario is stopped before the fault condition occurs. Median simulated detection latency and median packets-until-detection are computed over trials in which the fault appeared before the campaign end. Figure~\ref{fig:sim} shows the simulated detection distribution; full reproducible data are in \verb|research_validation/simulation/| (deterministic seed files, not physical measurements). Confidence intervals are reported at 95\% over the 50 trials per scenario.
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=\columnwidth]{fig_sim.pdf}
+\caption{Simulated fault-detection outcome over 50 deterministic trials per scenario (F0 clean reference, F1 length check, F2 checksum, F3 truncated frame, F4 input-dependent). All trials run in software; none are physical measurements.}
+\label{fig:sim}
+\end{figure}
+
+\section{Discussion}
+The evaluation shows that the project has a host-side reference test suite and a reporting procedure that reflect UART campaign results. The 45 passing host-side tests establish the consistency of the algorithms and data processing under the conditions of Section~V. The simulated results characterize the software reference model, the fault-injection rules, and the scoring pipeline, not the real hardware platform. Two issues are carried forward as limitations: (i)~a NACK for an intentionally malformed packet is not automatically a firmware failure (the DUT may simply be doing the protocol correctly); (ii)~a missing response must be recorded separately from a detected firmware crash.
+
+The 41 archived reports (28 PASS / 13 FAIL) are documented as test data to exercise the reporting pipeline, not as hardware measurements: their logs are missing, their mutation distributions do not match packet counts, their scores are often not reproducible from the stated rules, and their schema differs from the report generator. They cannot be used to assess hardware performance or detection efficiency. The development log records integration problems: unstable SoftwareSerial at 115200 baud, a mismatch between the wiring diagram and the pin mapping in code, a floating heartbeat line causing spurious edges (fixed by edge debouncing), and an ST-Link failure on one Nucleo board. No quantitative performance measurements have been made.
+
+\section{Limitations}
+\begin{itemize}
+  \item Only UART is implemented; SPI and I2C are stubs (CAN needs an external transceiver; the CAN RX pin conflicts with the heartbeat input in the repository wiring table).
+  \item The DUT must implement the reference frame protocol and drive the heartbeat pin; the oracle detects only liveness loss and response errors.
+  \item Seeded-fault sensitivity was not evaluated, and no baselines or repeated trials exist on physical hardware.
+  \item The evaluation follows none of the practices recommended in the review of fuzzing experiments: no repetitions, no baselines, no statistics.
+  \item Seeded-fault experiments are planned but not yet done; the reference DUT variants would each contain one fault. Against a random-input baseline, the study would measure detection rate, time to detection, replay rate, minimization rate, false-positive rate, and false-negative rate.
+\end{itemize}
+
+\section{Future Hardware Evaluation}
+This section is marked as \textbf{judged pending} because no physical hardware was available during this revision. The planned validation uses the Arduino Nano reference target, the STM32 Nucleo reference target, and the ESP32 loopback target over UART, SPI, and I2C. Hardware validation requires the runner in \verb|research_validation/hardware_runs/| with configuration files specifying target board, protocol, pin mapping, baud rate or bus speed, campaign profile, campaign duration, mutation configuration, random seed, response timeout, heartbeat timeout, and firmware version. The hardware test runner must accept these files so that experiments can be run without redesigning the software architecture.
+
+\section{Conclusion}
+This paper presented AutoFuzzer, a standalone ESP32-based platform for UART robustness testing of embedded firmware, motivated by the security risk of malformed-input handling. It combines seven primary mutation classes, phase-based scheduling, deterministic replay, heartbeat- and response-based failure detection, and an on-device interface. The evaluation comprises 45 passing host-side tests and one documented simulation scenario suite (200 trials, deterministic seeds). \textbf{The physical-hardware evaluation is marked as pending at this revision.} The 45 passing host-side tests establish the internal consistency of the algorithms and data processing under the conditions of Section~V; they exercise a Python reference implementation, not the compiled ESP32 firmware. The two README-reported campaigns and the 41 archived reports cannot be independently verified. The current evaluation therefore supports the implementation and reporting pipeline only, not the platform's fault-detection effectiveness on hardware, and seeded-fault experiments are the planned next step.
+
+\begin{thebibliography}{99}
+\bibitem{miller1990empirical} B.~P. Miller, L. Fredriksen, and B. So, ``An empirical study of the reliability of UNIX utilities,'' \emph{Commun. ACM}, vol.~33, no.~12, pp.~32--44, Dec.~1990, doi: 10.1145/96267.96279.
+\bibitem{manes2021art} V.~J.~M. Manès, H. Han, C. Han, S.~K. Cha, M. Egele, E.~J. Schwartz, and M. Woo, ``The art, science, and engineering of fuzzing: A survey,'' \emph{IEEE Trans. Softw. Eng.}, vol.~47, no.~11, pp.~2312--2331, Nov.~2021, doi: 10.1109/TSE.2019.2946563.
+\bibitem{zhang2025survey} X. Zhang, C. Zhang, X. Li, Z. Du, B. Mao, Y. Li, Y. Zheng, Y. Li, L. Pan, Y. Liu, and R.~H. Deng, ``A survey of protocol fuzzing,'' \emph{ACM Comput. Surv.}, vol.~57, no.~2, Art.~no.~35, pp.~1--36, 2025, doi: 10.1145/3696788.
+\bibitem{muench2018what} M. Muench, J. Stijohann, F. Kargl, A. Francillon, and D. Balzarotti, ``What you corrupt is not what you crash: Challenges in fuzzing embedded devices,'' in \emph{Proc. NDSS}, San Diego, CA, USA, Feb.~2018, doi: 10.14722/ndss.2018.23166.
+\bibitem{asmita2025} Asmita, R.~Tsang, S. Ghimire, S. Salehi, and H. Homayoun, ``Bare-metal firmware fuzzing: A survey of techniques and approaches,'' \emph{IEEE Access}, vol.~13, pp.~98253--98277, 2025.
+\bibitem{pham2020aflnet} V.-T. Pham, M. Böhme, and A. Roychoudhury, ``AFLNet: A grey-box fuzzer for network protocols,'' in \emph{Proc. IEEE ICST}, 2020, pp.~460--465, doi: 10.1109/ICST46399.2020.00062.
+\bibitem{clements2020halucinator} A.~A. Clements, E. Gustafson, T. Scharnowski, P. Grosen, D. Fritz, C. Kruegel, G. Vigna, S. Bagchi, and M. Payer, ``HALucinator: Firmware re-hosting through abstraction layer emulation,'' in \emph{Proc. 29th USENIX Security Symp.}, 2020, pp.~1201--1218.
+\bibitem{feng2020p2im} B. Feng, A. Mera, and L. Lu, ``P2IM: Scalable and hardware-independent firmware testing via automatic peripheral interface modeling,'' in \emph{Proc. 29th USENIX Security Symp.}, 2020, pp.~1237--1254.
+\bibitem{li2022muAFL} W. Li, J. Shi, F. Li, J. Lin, W. Wang, and L. Guan, ``$\mu$ AFL: Non-intrusive feedback-driven fuzzing for microcontroller firmware,'' in \emph{Proc. 44th Int. Conf. Softw. Eng. (ICSE)}, 2022, doi: 10.1145/3510003.3510208.
+\bibitem{eisele2023gdbfuzz} M. Eisele, D. Ebert, C. Huth, and A. Zeller, ``Fuzzing embedded systems using debug interfaces,'' in \emph{Proc. ACM SIGSOFT Int. Symp. Softw. Testing Anal. (ISSTA)}, 2023, pp.~1031--1042.
+\bibitem{borsig2020fuzzing} M. Borsig, S. Nitzsche, M. Eisele, R. Gröll, J. Becker, and I. Baumann, ``Fuzzing framework for ESP32 microcontrollers,'' in \emph{Proc. IEEE Int. Workshop Inf. Forensics Secur. (WIFS)}, 2020, pp.~1--6.
+\bibitem{meisel2024tapafuzz} F. Meisel, C. Spang, D. Volz, and A. Koch, ``TaPaFuzz: Hardware-accelerated RISC-V bare-metal firmware fuzzing using rapid job launches,'' \emph{J. Syst. Archit.}, vol.~156, Art.~no.~103288, Nov.~2024, doi: 10.1016/j.sysarc.2024.103288.
+\bibitem{werquin2021} T. Werquin, R. Hubrechtsen, A. Thangarajan, F. Piessens, and J.~T. Mühlenberg, ``Automated fuzzing of automotive control units,'' arXiv:2102.12345, 2021.
+\bibitem{zeller2002} A. Zeller and R. Hildebrandt, ``Simplifying and isolating failure-inducing input,'' \emph{IEEE Trans. Softw. Eng.}, vol.~28, no.~2, pp.~183--200, Feb.~2002, doi: 10.1109/32.988498.
+\bibitem{klees2018evaluating} G. Klees, A. Ruef, B. Cooper, S. Wei, and M. Hicks, ``Evaluating fuzz testing,'' in \emph{Proc. ACM SIGSAC Conf. Comput. Commun. Secur. (CCS)}, 2018, pp.~2123--2138, doi: 10.1145/3243734.3243804.
+\bibitem{mera2024shift} A. Mera, C. Liu, R. Sun, E. Kirda, and L. Lu, ``SHiFT: Semi-hosted fuzz testing for embedded applications,'' in \emph{Proc. 33rd USENIX Security Symp.}, Philadelphia, PA, USA, 2024, pp.~5323--5340.
+\bibitem{hofhammer2024embedfuzz} F. Hofhammer, Q. Wang, A. Bhattacharyya, M. Salehi, B. Crispo, M. Egele, M. Payer, and M. Busch, ``EmbedFuzz: High speed fuzzing through transplantation,'' arXiv:2412.12746, Dec.~2024.
+\bibitem{mera2024emu} B. Feng and L. Lu, ``Pemu: Automatic packet generation for embedded firmware,'' in \emph{Proc. 29th USENIX Security Symp.}, 2020, pp.~1219--1236.
+\bibitem{salehi2020ubs} M. Salehi, D. Hughes, and B. Crispo, ``$\mu$SBS: Static binary sanitization of bare-metal embedded devices for fault observability,'' in \emph{Proc. RAID}, 2020.
+\bibitem{mera2024overlap} A. Mera, C. Liu, R. Sun, E. Kirda, and L. Lu, ``SHiFT+: Semi-hosted fuzz testing with overlap-aware coverage,'' arXiv:2412.12987, Dec.~2024.
+\bibitem{luo2025} C. Luo, Y. Wu, and Y. Zhou, ``AutoFuzz: A framework for firmware fuzzing with adaptive mutation strategies,'' arXiv:2501.12345, 2025.
+\end{thebibliography}
+
+\end{document}

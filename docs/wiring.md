@@ -13,7 +13,7 @@ D0/D1 are shared with the CH340 USB chip and cannot be used while USB is connect
 ```
 ESP32 GPIO 17 (TX)  ──→  Nano D3 (RX - SoftwareSerial)
 ESP32 GPIO 16 (RX)  ←──  Nano D2 (TX - SoftwareSerial)
-ESP32 GPIO 25       ←──  Nano D4 (Heartbeat)
+ESP32 GPIO 26       ←──  Nano D4 (Heartbeat)
 ESP32 GND           ──→  Nano GND
 ```
 
@@ -23,7 +23,7 @@ ESP32 GND           ──→  Nano GND
 | :--- | :--- | :--- | :--- | :--- |
 | GPIO 17 | D3 | Digital 3 (SoftwareSerial RX) | TX → RX | Fuzzer → DUT |
 | GPIO 16 | D2 | Digital 2 (SoftwareSerial TX) | RX ← TX | DUT → Fuzzer |
-| GPIO 25 | D4 | Digital 4 | ← | Heartbeat from DUT |
+| GPIO 26 | D4 | Digital 4 | ← | Heartbeat from DUT |
 | GND | GND | Any GND pin | ↔ | Common ground |
 
 ### Important Notes
@@ -39,7 +39,7 @@ ESP32 GND           ──→  Nano GND
 ```
 ESP32 GPIO 17 (TX)  ──→  STM32 PA10 (USART1_RX)
 ESP32 GPIO 16 (RX)  ←──  STM32 PA9  (USART1_TX)
-ESP32 GPIO 25       ←──  STM32 PB5  (Heartbeat)
+ESP32 GPIO 26       ←──  STM32 PB5  (Heartbeat)
 ESP32 GND           ──→  STM32 GND
 ```
 
@@ -49,7 +49,7 @@ ESP32 GND           ──→  STM32 GND
 | :--- | :--- | :--- | :--- | :--- |
 | GPIO 17 | PA10 | CN10 pin 33 | TX → RX | Fuzzer → DUT |
 | GPIO 16 | PA9 | CN10 pin 21 | RX ← TX | DUT → Fuzzer |
-| GPIO 25 | PB5 | CN7 pin 17 | ← | Heartbeat from DUT |
+| GPIO 26 | PB5 | CN7 pin 17 | ← | Heartbeat from DUT |
 | GND | GND | Any GND pin | ↔ | Common ground |
 
 ### Important Notes
@@ -66,7 +66,7 @@ Do **not** connect these until UART milestone passes.
 
 | Protocol | ESP32 | STM32 | Notes |
 | :--- | :--- | :--- | :--- |
-| SPI | 23 MOSI, 19 MISO, 18 SCK, 5 CS | PA7 MOSI, PA6 MISO, PA5 SCK, PA4 NSS | ESP32 master, STM32 slave |
+| SPI | 23 MOSI, 19 MISO, 18 SCK, 5 CS | PA7 MOSI, PA6 MISO, PB3 SCK*, PA4 NSS | ESP32 master, STM32 slave. *PA5 is NOT used for SCK — it carries the DUT heartbeat (on-board LED). Current DUT firmware has no SPI slave, so SCK is optional/unwired. |
 | I2C | 21 SDA, 22 SCL | PB7 SDA, PB6 SCL | Add 4.7kΩ pull-ups if needed |
 | CAN | 26 TX, 25 RX | PB9 TX, PB8 RX | Requires CAN transceiver |
 

@@ -12,14 +12,21 @@ struct ButtonState {
   bool pressed;        // Edge-triggered: true for one cycle after press
 };
 
-static const uint32_t kDebounceMs = 25;
+// 50ms: real presses hold >=100ms; electrical noise bursts (long jumper
+// wires picking up interference) rarely stay stable this long. This is
+// the press-qualification window that rejects phantom button presses.
+static const uint32_t kDebounceMs = 50;
 
 static ButtonState s_buttons[] = {
   { Pin::BtnUp,     BTN_UP,      HIGH, HIGH, 0, false },  // GPIO 13 → UP
   { Pin::BtnDown,   BTN_DOWN,    HIGH, HIGH, 0, false },  // GPIO 12 → DOWN
   { Pin::BtnBack,   BTN_BACK,    HIGH, HIGH, 0, false },  // GPIO 14 → BACK
-  { Pin::BtnSelect, BTN_SELECT,  HIGH, HIGH, 0, false },  // GPIO 27 → SELECT
+  { Pin::BtnSelect, BTN_SELECT,  HIGH, HIGH, 0, false },  // GPIO 25 → SELECT
 };
+
+// Latching press counters — catch every debounced press even if the
+// reader (BTNS diagnostic) polls slower than the press duration.
+static uint32_t s_pressCounts[4] = {0, 0, 0, 0};
 
 static const uint8_t kButtonCount = sizeof(s_buttons) / sizeof(s_buttons[0]);
 
@@ -62,6 +69,7 @@ ButtonAction buttons_update(void) {
         // Detect press (transition from HIGH to LOW)
         if (raw == LOW) {
           btn.pressed = true;
+          s_pressCounts[i]++;   // latch for BTNS diagnostic
           if (result == BTN_NONE) {
             result = btn.action;
           }
@@ -85,4 +93,12 @@ bool buttons_is_held(ButtonAction action) {
     }
   }
   return false;
+}
+
+// Read and clear latching press counters (BTNS diagnostic)
+void buttons_get_press_counts(uint32_t* out4) {
+  for (uint8_t i = 0; i < kButtonCount && i < 4; i++) {
+    out4[i] = s_pressCounts[i];
+    s_pressCounts[i] = 0;
+  }
 }

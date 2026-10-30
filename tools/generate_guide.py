@@ -421,7 +421,7 @@ def generate_guide():
     pdf.code_block(
         'ESP32 GPIO 17 (TX)  -->  Nano D3 (RX - SoftwareSerial)\n'
         'ESP32 GPIO 16 (RX)  <--  Nano D2 (TX - SoftwareSerial)\n'
-        'ESP32 GPIO 25       <--  Nano D4 (Heartbeat)\n'
+        'ESP32 GPIO 26       <--  Nano D4 (Heartbeat)\n'
         'ESP32 GND           -->  Nano GND'
     )
 
@@ -429,7 +429,7 @@ def generate_guide():
     pdf.code_block(
         'ESP32 GPIO 17 (TX)  -->  STM32 PA10 (USART1_RX)\n'
         'ESP32 GPIO 16 (RX)  <--  STM32 PA9  (USART1_TX)\n'
-        'ESP32 GPIO 25       <--  STM32 PB5  (Heartbeat)\n'
+        'ESP32 GPIO 26       <--  STM32 PB5  (Heartbeat)\n'
         'ESP32 GND           -->  STM32 GND'
     )
 
@@ -487,7 +487,7 @@ def generate_guide():
     pdf.sub_title('Heartbeat Protocol')
     pdf.body_text(
         'The DUT continuously toggles a GPIO pin at approximately 100ms intervals. '
-        'The ESP32 monitors this signal on GPIO 25. If no edge is detected for more '
+        'The ESP32 monitors this signal on GPIO 26. If no edge is detected for more '
         'than 350ms, a heartbeat timeout is registered as a suspected failure. The system '
         'then freezes the campaign and captures all state for reproduction.'
     )
@@ -802,7 +802,7 @@ def generate_guide():
             ['Nano not flashing', 'CH340 auto-reset broken on clone', 'HUPCL DTR toggle via Python'],
             ['0 ACKs/NACKs from Nano', 'SoftwareSerial unreliable at 115200', 'Reduced to 9600 baud'],
             ['Nano D0/D1 conflict', 'D0/D1 shared with CH340 USB', 'Switched to D2/D3 (SoftwareSerial)'],
-            ['Heartbeat spam', 'Floating GPIO25 toggling rapidly', 'Edge debounce + timeout suppression'],
+            ['Heartbeat spam', 'Floating GPIO26 toggling rapidly', 'Edge debounce + timeout suppression'],
             ['STM32 FAIL.TXT', 'ST-Link cannot identify MCU', 'Hardware issue -- MCU defective/locked'],
             ['OLED freeze after I2C', 'Wire.end() then display.block()', 'OLED sleeps during I2C, wakes properly'],
             ['Buttons dead after test', 'I2C bus stuck holding SDA low', 'Non-blocking OLED wake via state machine'],

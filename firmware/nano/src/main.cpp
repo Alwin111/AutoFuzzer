@@ -250,8 +250,12 @@ void setup() {
 void loop() {
   // Heartbeat: toggle every 100ms
   if (millis() - lastHeartbeatAt >= 100) {
-    digitalWrite(kHeartbeatPin, !digitalRead(kHeartbeatPin));
+    bool newLvl = !digitalRead(kHeartbeatPin);
+    digitalWrite(kHeartbeatPin, newLvl);
     lastHeartbeatAt = millis();
+    // Debug: print heartbeat toggle so we can observe it over USB
+    Serial.print(F("HB: TOGGLE "));
+    Serial.println(newLvl ? F("HIGH") : F("LOW"));
   }
 
   // Process UART bytes from ESP32

@@ -20,7 +20,7 @@ namespace Pin {
   constexpr int UartRx    = 16;  // ESP32 RX2 <- Target TX
 
   // Heartbeat from DUT
-  constexpr int Heartbeat = 25;  // Input from STM32 PB5
+  constexpr int Heartbeat = 26;  // Input from DUT (internal pulldown, quiet LOW when idle)
 
   // SPI
   constexpr int SpiSck    = 18;
@@ -44,7 +44,7 @@ namespace Pin {
   constexpr int BtnUp     = 12;  // Up / Next menu item
   constexpr int BtnDown   = 13;  // Down / Previous menu item
   constexpr int BtnBack   = 14;  // Back / Cancel / Reset
-  constexpr int BtnSelect = 27;  // Select / Confirm / Start
+  constexpr int BtnSelect = 25;  // Select / Confirm / Start (moved from GPIO27 — that pin developed a ground short)
 }
 
 // ============================================

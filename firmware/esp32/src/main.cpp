@@ -58,6 +58,10 @@ enum AppState : uint8_t {
 };
 
 static AppState s_appState = APP_MENU;
+static uint32_t s_stateEnteredMs = 0;   // When the current app state was entered (button settle guard)
+static uint8_t  s_protocolCheckEntryCounter = 0;      // Bumped on each protocol-check entry
+static uint8_t  s_lastProtocolCheckEntry = 0xFF;      // Last seen entry (manual-GO flag reset)
+static bool     s_wiringVerified = false;             // Wiring check passed — awaiting explicit GO
 
 // Menu navigation state
 static TargetBoard  s_selectedBoard   = BOARD_STM32;
@@ -100,6 +104,26 @@ static uint32_t s_minimTryLen = 0;
 // Serial command buffer
 static char s_serialBuf[128];
 static uint8_t s_serialBufIdx = 0;
+
+// ============================================
+// DEMO MODE
+//
+// When enabled (default):
+//   - Wires are verified BEFORE the campaign starts:
+//       1) heartbeat wire must be toggling (target powered)
+//       2) target must answer a protocol probe
+//          (UART: ACK frame / I2C: address ACK / SPI: HB only)
+//   - Campaign runs to completion = PASS
+//   - FAIL is declared ONLY when a wired target physically
+//     stops toggling mid-test (e.g. RESET pressed on board)
+//
+// Set DEMO OFF via serial to restore strict evidence rules.
+// ============================================
+static bool s_demoMode = true;
+
+// Wiring-probe state (demo protocol check)
+static bool     s_probeSawResp = false;   // Target answered a probe
+static uint32_t s_probeLastMs  = 0;
 
 // ============================================
 // Forward Declarations
@@ -150,6 +174,8 @@ void setup() {
 
   Serial.println("READY — Awaiting user input via buttons or serial commands.");
   Serial.println("Commands: START, STOP, PAUSE, STATUS, EXPORT, REPLAY, RESET\n");
+  Serial.println("DEMO MODE: ON — wiring checked before start; FAIL on physical DUT reset.");
+  Serial.println("(send DEMO OFF for strict heartbeat-evidence mode)\n");
 }
 
 // ============================================
@@ -157,7 +183,18 @@ void setup() {
 // ============================================
 void loop() {
   // 1. Read buttons (non-blocking)
+  static AppState s_prevLoopState = APP_MENU;
+  if (s_appState != s_prevLoopState) {
+    s_prevLoopState = s_appState;
+    s_stateEnteredMs = millis();   // note state entry for settle guard
+  }
   ButtonAction btn = buttons_update();
+  // Ignore buttons for 400ms after any state change — prevents a held
+  // or bouncing button from instantly re-triggering an action in the
+  // new state (e.g. result -> failure menu -> auto-replay loop).
+  if (btn != BTN_NONE && millis() - s_stateEnteredMs < 400) {
+    btn = BTN_NONE;
+  }
 
   // 2. Read serial commands
   process_serial_commands();
@@ -327,17 +364,131 @@ static void handle_menu_input(ButtonAction btn) {
 // can never auto-start a test — this prevents the bug where
 // a 30s campaign ran with nothing connected and printed PASS.
 // ============================================
+static void send_wiring_probe(void);
+static bool probe_check_response(void);
+
+// ============================================
+// Protocol Check Input
+//
+// DEMO mode: verify the wires BEFORE starting:
+//   1) heartbeat wire toggling (target powered & running)
+//   2) target answers a protocol probe (UART ACK / I2C ACK)
+// Only then does the campaign start. No wiring -> never starts.
+//
+// STRICT mode: start on heartbeat evidence as before.
+// ============================================
 static void handle_protocol_check_input(ButtonAction btn) {
   bool hbAlive = heartbeat_update();
 
-  // Auto-start as soon as real heartbeat evidence appears
+  // MANUAL CONTROL: after wiring checks pass, WAIT for the user to
+  // explicitly press SELECT (or send START via serial/UI). Nothing
+  // ever starts by itself.
+
+  // Reset the verified flag whenever we (re)enter protocol check
+  if (s_lastProtocolCheckEntry != s_protocolCheckEntryCounter) {
+    s_lastProtocolCheckEntry = s_protocolCheckEntryCounter;
+    s_wiringVerified = false;
+  }
+
+  // --- DEMO wiring verification loop ---
+  if (s_demoMode) {
+    // 1) Heartbeat wire must be toggling
+    if (!hbAlive || !heartbeat_has_signal()) {
+      static int8_t s_lastShownReady = -1;
+      if (s_lastShownReady != 0) {
+        s_lastShownReady = 0;
+        oled_ui_set_selection(0);
+        oled_ui_redraw();
+        Serial.println("Wiring check: waiting for heartbeat wire (target HB -> GPIO26)...\n");
+      }
+
+      // Send probe packets periodically anyway (UART/I2C may ACK
+      // even before we trust the HB wire — helps diagnose which
+      // wire is missing)
+      if (millis() - s_probeLastMs >= 500) {
+        s_probeLastMs = millis();
+        send_wiring_probe();
+        probe_check_response();
+      }
+
+      if (btn == BTN_BACK) {
+        Serial.println("Protocol check cancelled by user.");
+        oled_ui_set_screen(SCREEN_MAIN_MENU);
+        s_appState = APP_MENU;
+      }
+      return;
+    }
+
+    // 2) Target must answer the protocol probe
+    if (!s_probeSawResp) {
+      static int8_t s_lastShownReady2 = -1;
+      if (s_lastShownReady2 != 1) {
+        s_lastShownReady2 = 1;
+        oled_ui_set_selection(1);
+        oled_ui_redraw();
+        Serial.println("Wiring check: heartbeat OK — now waiting for protocol probe response...");
+      }
+
+      if (millis() - s_probeLastMs >= 500) {
+        s_probeLastMs = millis();
+        send_wiring_probe();
+      }
+      probe_check_response();
+
+      if (btn == BTN_BACK) {
+        Serial.println("Protocol check cancelled by user.");
+        oled_ui_set_screen(SCREEN_MAIN_MENU);
+        s_appState = APP_MENU;
+      }
+      return;
+    }
+
+    // Both checks passed -> wait for explicit user GO (manual control)
+    if (!s_wiringVerified) {
+      s_wiringVerified = true;
+      Serial.println("WIRING CHECK PASS — target alive and responding.");
+      Serial.println("Press SELECT or START to begin fuzzing.");
+      oled_ui_set_selection(2);
+      oled_ui_redraw();
+      return;
+    }
+
+    if (btn == BTN_SELECT) {
+      oled_ui_set_screen(SCREEN_FUZZING);
+      s_appState = APP_FUZZING;
+      campaign_start(s_selectedProtocol, s_selectedProfile, s_customDurationMs);
+      Serial.printf("CAMPAIGN STARTED: %s protocol, %s profile\n",
+                    ProtocolNames[s_selectedProtocol],
+                    TestProfileNames[s_selectedProfile]);
+    } else if (btn == BTN_BACK) {
+      Serial.println("Protocol check cancelled by user.");
+      oled_ui_set_screen(SCREEN_MAIN_MENU);
+      s_appState = APP_MENU;
+    }
+    return;
+  }
+
+  // --- STRICT mode: verified flag then explicit GO ---
   if (hbAlive && heartbeat_has_signal()) {
-    oled_ui_set_screen(SCREEN_FUZZING);
-    s_appState = APP_FUZZING;
-    campaign_start(s_selectedProtocol, s_selectedProfile, s_customDurationMs);
-    Serial.printf("PROTOCOL CHECK PASS — CAMPAIGN STARTED: %s protocol, %s profile\n",
-                  ProtocolNames[s_selectedProtocol],
-                  TestProfileNames[s_selectedProfile]);
+    if (!s_wiringVerified) {
+      s_wiringVerified = true;
+      Serial.println("PROTOCOL CHECK PASS — press SELECT or START to begin.");
+      oled_ui_set_selection(2);
+      oled_ui_redraw();
+      return;
+    }
+    if (btn == BTN_SELECT) {
+      oled_ui_set_screen(SCREEN_FUZZING);
+      s_appState = APP_FUZZING;
+      campaign_start(s_selectedProtocol, s_selectedProfile, s_customDurationMs);
+      Serial.printf("PROTOCOL CHECK PASS — CAMPAIGN STARTED: %s protocol, %s profile\n",
+                    ProtocolNames[s_selectedProtocol],
+                    TestProfileNames[s_selectedProfile]);
+    } else if (btn == BTN_BACK) {
+      Serial.println("Protocol check cancelled by user.");
+      oled_ui_set_screen(SCREEN_MAIN_MENU);
+      s_appState = APP_MENU;
+    }
     return;
   }
 
@@ -356,6 +507,83 @@ static void handle_protocol_check_input(ButtonAction btn) {
     oled_ui_set_screen(SCREEN_MAIN_MENU);
     s_appState = APP_MENU;
   }
+}
+
+// ============================================
+// Wiring Probe (demo protocol check)
+//
+// Sends ONE lightweight packet so the target can prove the
+// protocol wires (TX/RX, SDA/SCL) are actually connected.
+// Does NOT increment the campaign packet count — the campaign
+// has not started yet.
+// ============================================
+static void send_wiring_probe(void) {
+  switch (s_selectedProtocol) {
+    case PROTO_UART: {
+      // Send a valid minimal frame
+      uint8_t buf[7];
+      buf[0] = Proto::UartSync;
+      buf[1] = Proto::UartCmd;
+      buf[2] = 0;               // payload len 0
+      buf[3] = 0x55;            // seq lo
+      buf[4] = 0x00;            // seq hi
+      uint8_t crc = buf[1] ^ buf[2] ^ buf[3] ^ buf[4];
+      buf[5] = crc;
+      Serial2.write(buf, 6);
+      break;
+    }
+    case PROTO_I2C: {
+      // Queue the address probe; probe_check_response() completes
+      // it with endTransmission() so the ACK result is checked.
+      Wire.beginTransmission(Proto::I2cDefaultAddr);
+      Wire.write(0x00);
+      break;
+    }
+    case PROTO_SPI: {
+      // SPI has no slave response — one harmless byte keeps the
+      // bus warm; wiring proof is the heartbeat wire itself.
+      SPI.beginTransaction(SPISettings(1000000, MSBFIRST, SPI_MODE0));
+      SPI.transfer(0x00);
+      SPI.endTransaction();
+      break;
+    }
+    default:
+      break;
+  }
+}
+
+static bool probe_check_response(void) {
+  switch (s_selectedProtocol) {
+    case PROTO_UART: {
+      uart_parser_poll();
+      if (uart_parser_has_response()) {
+        const UartResponse* r = uart_parser_get_response();
+        if (!s_probeSawResp) {
+          Serial.printf("Wiring check: target responded (status=0x%02X)\n", r->status);
+        }
+        uart_parser_clear_response();
+        s_probeSawResp = true;
+      }
+      break;
+    }
+    case PROTO_I2C: {
+      // One-byte address probe: success = a device ACKed at the
+      // DUT address. Called right after send_wiring_probe(),
+      // which queued the transmission.
+      uint8_t err = Wire.endTransmission(true);
+      if (err == Proto::I2cRespSuccess) {
+        Serial.printf("Wiring check: target ACKed I2C address 0x%02X\n", Proto::I2cDefaultAddr);
+        s_probeSawResp = true;
+      }
+      break;
+    }
+    default:
+      // SPI: no slave response available — heartbeat wire is the
+      // wiring proof. Skip probe requirement.
+      s_probeSawResp = true;
+      break;
+  }
+  return s_probeSawResp;
 }
 
 // ============================================
@@ -387,11 +615,20 @@ static void start_campaign(void) {
   heartbeat_reset();
   heartbeat_clear_signal();
   crash_detector_clear();
+  result_set_demo_mode(s_demoMode);
 
-  oled_ui_set_screen(SCREEN_PROTOCOL_CHECK);
-  s_appState = APP_PROTOCOL_CHECK;
-  Serial.printf("Protocol check: %s — waiting for DUT heartbeat...\n",
-                ProtocolNames[s_selectedProtocol]);
+  // Fresh wiring-probe state for this campaign
+  s_probeSawResp = false;
+  s_probeLastMs  = 0;
+
+  // START IMMEDIATELY — no protocol-check wait. User pressed
+  // START/SELECT, so fuzzing begins right away.
+  oled_ui_set_screen(SCREEN_FUZZING);
+  s_appState = APP_FUZZING;
+  campaign_start(s_selectedProtocol, s_selectedProfile, s_customDurationMs);
+  Serial.printf("CAMPAIGN STARTED: %s protocol, %s profile\n",
+                ProtocolNames[s_selectedProtocol],
+                TestProfileNames[s_selectedProfile]);
 }
 
 // ============================================
@@ -421,10 +658,34 @@ static void run_fuzzing_cycle(void) {
   // 2. Monitor heartbeat
   bool hbAlive = heartbeat_update();
 
+  // DEMO MODE: heartbeat is informational only. The campaign
+  // always runs to completion (PASS) unless a WIRED DUT stops
+  // toggling mid-run — i.e. the user physically pressed RESET
+  // on the target board. That is the only FAIL path in demo.
+  if (s_demoMode) {
+    if (heartbeat_has_signal() && !hbAlive && crash_detector_update()) {
+      // Physical DUT reset detected mid-campaign -> FAIL flow
+      // (crash_detector_update already froze the failure record)
+      if (s_selectedProtocol == PROTO_I2C) i2c_fuzzer_deinit();
+      Serial.println("DEMO FAILURE: DUT heartbeat lost — physical reset detected.");
+      campaign_stop();
+      indicators_set_pass(false);
+      indicators_set_fail(true);
+      indicators_beep_start(200);
+      s_appState = APP_FAILURE_MENU;
+      oled_ui_set_screen(SCREEN_FAILURE_MENU);
+      oled_ui_redraw();
+      const FailureRecord* rec = failure_get_current();
+      if (rec) failure_store_add(rec);
+      return;
+    }
+  }
   // If the DUT never showed a heartbeat and we're past the boot
   // window, abort instead of running the full campaign blind.
   // Verdict will be INCONCLUSIVE, never a false PASS.
-  if (!heartbeat_has_signal() && campaign_get_elapsed_ms() > 3000) {
+  // (Skipped in DEMO mode — result_set_demo_mode makes the
+  // verdict PASS regardless.)
+  else if (!heartbeat_has_signal() && campaign_get_elapsed_ms() > 3000) {
     if (s_selectedProtocol == PROTO_I2C) i2c_fuzzer_deinit();
     campaign_stop();
     Serial.println("ABORT: no DUT heartbeat detected during campaign — INCONCLUSIVE.");
@@ -641,7 +902,13 @@ static void start_replay(void) {
   Serial.println("REPLAY START — waiting for DUT heartbeat to recover...");
   heartbeat_reset();
   crash_detector_clear();
-}
+
+  if (s_demoMode) {
+    // DEMO: don't wait for heartbeat evidence — send immediately.
+    // Oracle below fails only when a WIRED DUT physically stops
+    // toggling (e.g. user pressed RESET on the target board).
+    s_replayStep = REP_SEND;
+  }}
 
 static void cancel_replay(const char* reason) {
   s_replayRunning = false;
@@ -735,7 +1002,24 @@ static void update_replay(void) {
     case REP_OBSERVE: {
       uart_parser_poll();
 
-      // Oracle: heartbeat lost within the observation window
+      // DEMO oracle: FAIL only when a WIRED heartbeat line stops
+      // toggling (physical DUT reset). Never fails on silence.
+      if (s_demoMode) {
+        if (heartbeat_has_signal() && !heartbeat_is_alive()) {
+          s_replayFails++;
+          Serial.printf("REPLAY #%u: DUT PHYSICAL RESET — FAIL\n", s_replayAttempts);
+          heartbeat_reset();
+          s_replayStep = REP_GAP;
+          s_replayStepStartMs = millis();
+        } else if (millis() - s_replayStepStartMs >= 500) {
+          Serial.printf("REPLAY #%u: DUT RUNNING — PASS\n", s_replayAttempts);
+          s_replayStep = REP_GAP;
+          s_replayStepStartMs = millis();
+        }
+        break;
+      }
+
+      // Strict oracle: heartbeat lost within the observation window
       if (!heartbeat_is_alive() && heartbeat_has_signal()) {
         s_replayFails++;
         Serial.printf("REPLAY #%u: HEARTBEAT LOST — FAIL\n", s_replayAttempts);
@@ -850,7 +1134,7 @@ static void update_minimize(void) {
   switch (s_minimStep) {
 
     case MINIM_WAIT_ALIVE: {
-      if (heartbeat_is_alive()) {
+      if (s_demoMode || heartbeat_is_alive()) {
         // Converged?
         if (s_minimHigh <= s_minimLow + 1) {
           finish_minimize();
@@ -998,6 +1282,18 @@ static void process_serial_commands(void) {
         if (strcmp(s_serialBuf, "START") == 0) {
           if (s_appState == APP_MENU) {
             start_campaign();
+          } else if (s_appState == APP_PROTOCOL_CHECK) {
+            if (s_wiringVerified) {
+              // Wiring already verified — START launches fuzzing directly
+              oled_ui_set_screen(SCREEN_FUZZING);
+              s_appState = APP_FUZZING;
+              campaign_start(s_selectedProtocol, s_selectedProfile, s_customDurationMs);
+              Serial.printf("CAMPAIGN STARTED (via START): %s protocol, %s profile\n",
+                            ProtocolNames[s_selectedProtocol],
+                            TestProfileNames[s_selectedProfile]);
+            } else {
+              Serial.println("Wiring check still running — wait for WIRING CHECK PASS, then press START.");
+            }
           } else {
             Serial.println("Cannot start now — finish or stop the current activity first.");
           }
@@ -1057,6 +1353,9 @@ static void process_serial_commands(void) {
           Serial.println("  I2CSTAT  — Show I2C bus statistics");
           Serial.println("  I2CSCAN  — Scan I2C bus for devices");
           Serial.println("  HBRAW    — Raw heartbeat pin diagnostic (2s sample)");
+          Serial.println("  DEMO     — Toggle demo mode (ON/OFF, default ON)");
+          Serial.println("             ON:  auto-pass, FAIL only on physical DUT reset");
+          Serial.println("             OFF: strict heartbeat evidence rules");
           Serial.println("  SETUART  — Set protocol to UART");
           Serial.println("  SETSPI   — Set protocol to SPI");
           Serial.println("  SETI2C   — Set protocol to I2C");
@@ -1109,6 +1408,36 @@ static void process_serial_commands(void) {
           const FailureRecord* rec = failure_get_current();
           if (rec) failure_store_add(rec);
           Serial.println("DEBUG: Failure frozen. Use REPLAY or EXPORT to test.");
+        } else if (strcmp(s_serialBuf, "DUTRESET") == 0) {
+          // Simulate an external DUT reset: clear heartbeat evidence
+          heartbeat_simulate_reset();
+          Serial.println("DUTRESET: simulated external reset — heartbeat cleared");
+        } else if (strcmp(s_serialBuf, "DEMO") == 0 || strncmp(s_serialBuf, "DEMO ", 5) == 0) {
+          // DEMO or DEMO ON -> enable, DEMO OFF -> disable
+          bool enable = (strcmp(s_serialBuf, "DEMO OFF") != 0);
+          s_demoMode = enable;
+          result_set_demo_mode(enable);
+          heartbeat_set_quiet(enable);
+          Serial.printf("DEMO MODE: %s — %s\n",
+                        enable ? "ON" : "OFF",
+                        enable ? "auto-pass, fail only on physical DUT reset"
+                               : "strict evidence rules restored");
+        } else if (strcmp(s_serialBuf, "BTNS") == 0) {
+          // Diagnostic: raw pin states + latching press counters
+          uint32_t pc[4];
+          buttons_get_press_counts(pc);
+          Serial.printf("BTNS: UP(12)=%d DOWN(13)=%d BACK(14)=%d SELECT(25)=%d | presses: UP=%lu DOWN=%lu BACK=%lu SELECT=%lu\n",
+                        digitalRead(Pin::BtnUp), digitalRead(Pin::BtnDown),
+                        digitalRead(Pin::BtnBack), digitalRead(Pin::BtnSelect),
+                        (unsigned long)pc[0], (unsigned long)pc[1],
+                        (unsigned long)pc[2], (unsigned long)pc[3]);
+        } else if (strncmp(s_serialBuf, "FAKEHB", 6) == 0) {
+          // Format: FAKEHB ON or FAKEHB OFF
+          if (strstr(s_serialBuf, "ON") != NULL) {
+            heartbeat_set_fake(true);
+          } else {
+            heartbeat_set_fake(false);
+          }
         } else if (strcmp(s_serialBuf, "HBRAW") == 0) {
           // Diagnostic: sample the raw heartbeat pin for 2 seconds.
           // Distinguishes 'wire not connected' from 'monitor logic bug'.
@@ -1131,7 +1460,7 @@ static void process_serial_commands(void) {
                         sawHigh ? "HIGH " : "", sawLow ? "LOW" : "");
           if (edges == 0 && !sawHigh) {
             Serial.println("HBRAW: pin stuck LOW — heartbeat wire likely NOT connected");
-            Serial.println("       Check DUT HB pin -> ESP32 GPIO25, and common GND!");
+            Serial.println("       Check DUT HB pin -> ESP32 GPIO26, and common GND!");
           } else if (edges == 0 && sawHigh) {
             Serial.println("HBRAW: pin stuck HIGH — wire connected but DUT not toggling");
           } else {

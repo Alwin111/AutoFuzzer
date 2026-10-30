@@ -19,7 +19,7 @@
 //   BTN 1 (GPIO 12) → BTN_SELECT
 //   BTN 2 (GPIO 13) → BTN_NEXT
 //   BTN 3 (GPIO 14) → BTN_BACK
-//   BTN 4 (GPIO 27) → BTN_DISPLAY
+//   BTN 4 (GPIO 25) → BTN_SELECT (moved from GPIO27)
 // ============================================
 
 // Initialize all buttons with debounce
@@ -32,3 +32,6 @@ ButtonAction buttons_update(void);
 
 // Check if a specific button is currently held
 bool buttons_is_held(ButtonAction action);
+
+// Read and clear latching press counters [UP, DOWN, BACK, SELECT]
+void buttons_get_press_counts(uint32_t* out4);

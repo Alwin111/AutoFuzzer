@@ -50,3 +50,16 @@ uint32_t heartbeat_get_period_ms(void);
 // Reset the monitor timing (e.g., after DUT reset or before replay).
 // Does NOT forget the has-signal evidence.
 void heartbeat_reset(void);
+
+// Runtime helpers for testing without a physical heartbeat pin
+// Enable/disable fake heartbeat mode (when enabled the monitor
+// reports a live heartbeat unless explicitly forced to lose).
+void heartbeat_set_fake(bool enable);
+
+// Force the heartbeat monitor to behave as if the DUT reset/loses
+// signal (clears evidence). Useful for simulating a reset event.
+void heartbeat_simulate_reset(void);
+
+// Suppress per-edge/timeout serial prints (used by DEMO mode to
+// avoid flooding the monitor during long silent campaigns).
+void heartbeat_set_quiet(bool quiet);

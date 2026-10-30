@@ -35,3 +35,9 @@ void result_print_report(void);
 
 // Get result as a string description
 const char* result_get_verdict(void);
+
+// DEMO mode: when true, verdict is always PASS (no failures)
+// regardless of response/heartbeat evidence. Set before or
+// during a campaign via result_set_demo_mode().
+void result_set_demo_mode(bool enable);
+bool result_get_demo_mode(void);

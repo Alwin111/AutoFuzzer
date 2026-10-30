@@ -1,47 +1,25 @@
-# PlatformIO build artifacts
-**/.pio/
-**/.pioenvs/
-**/.piolibdeps/
-
-# Build output
-build/
-*.o
-*.elf
-*.bin
-*.map
-*.a
-*.d
-*.su
-*.exe
-*.out
-
-# VS Code
+research_validation/paper/submitted_paper.pdf
+research_validation/paper/submitted_paper.txt
+/firmware/esp32/.pio/
+/.venv-pio/
+firmware/stm32/.venv-pio/
+ssi_diagnostics/test_emg/
+ssi_diagnostics/test_emg/
+firmware/stm32/src/main.cpp
+firmware/stm32/platformio.ini
+/.venv/
+.venv-pio/
 .vscode/
-!.vscode/c_cpp_properties.json
-
-# IDE
-.idea/
-*.swp
-*.swo
-*~
-
-# OS
-.DS_Store
-Thumbs_Store
-desktop.ini
-
-# Python
-__pycache__/
-*.pyc
-*.pyo
-.venv/
-venv/
-.env
-
-# Freebuff
 .freebuff/
-
-# Temp files
-*.tmp
-*.bak
-testing commands.txt*
+firmware/esp32/.venv/
+# PlatformIO build artifacts
+firmware/esp32/.pio/
+firmware/nano/.pio/
+firmware/stm32/.pio/
+# Build output
+firmware/esp32/build/
+firmware/nano/build/
+# Test/report binary artifacts
+reports/**/packet.bin
+tests/__pycache__/
+tools/**/__pycache__/

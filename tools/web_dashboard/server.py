@@ -63,6 +63,7 @@ def main():
     reconnecting = False
     last_target_port = None
     last_target_baud = 115200
+    reader_started = False       # guard against multiple reader threads
 
     live_state = {
         'connected': False,
@@ -383,6 +384,10 @@ def main():
             serial_conn = None
 
     def start_reader():
+        nonlocal reader_started
+        if reader_started:
+            return  # already running — don't spawn a second thread
+        reader_started = True
         t = threading.Thread(target=serial_reader_thread, daemon=True)
         t.start()
         return t
@@ -400,7 +405,7 @@ def main():
             live_state['reconnecting'] = False
             live_state['port'] = port
             live_state['baud'] = baud
-            start_reader()
+            start_reader()  # safe — guarded by reader_started flag
             return True, f"Connected to {port} @ {baud} baud"
         return False, f"Could not open {port}"
 

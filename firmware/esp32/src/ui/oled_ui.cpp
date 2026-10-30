@@ -363,7 +363,7 @@ static const WiringInfo kSpiWiring[] = {
   { "SPI -> STM32 Nucleo",
     "23 MOSI -> PA7",
     "19 MISO <- PA6",
-    "18 SCK  -> PA5",
+    "18 SCK  -> PB3",
     "5  CS   -> PA4",
     "Press SELECT" },
   // ESP32

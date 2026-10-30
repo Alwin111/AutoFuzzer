@@ -1,0 +1,45 @@
+# AutoFuzzer simulation configuration — deterministic fault-injection model
+# This file is the software-based experiment configuration. No physical hardware is used.
+# Every field is recorded with each trial so results are reproducible from source + seed.
+
+# Scenarios: F0 (clean reference firmware), F1 (payload-length validation fault),
+#            F2 (incorrect checksum handling), F3 (truncated-frame handling fault),
+#            F4 (input-dependent fault)
+scenarios:
+  - F0
+  - F1
+  - F2
+  - F3
+  - F4
+
+# Number of reproducible trials per seed
+packet_counts:
+  F0: 50
+  F1: 50
+  F2: 50
+  F3: 50
+  F4: 50
+
+# Seeds are fixed, non-zero, and recorded with every trial. The rotation selection is a
+# deterministic mix rather than a hidden random draw: for each trial the seed is rotated
+# by the trial index, so seed 0x1234ABCD + trial index 37 is a different value for trial 37.
+seeds:
+  F0: 0x1234ABCD
+  F1: 0x2345BCDE
+  F2: 0x3456CDEF
+  F3: 0x4567DEF0
+  F4: 0x5678EF01
+
+# Campaign profiles: quick (30 s), standard (60 s), deep (5 min).
+campaigns: [Quick, Standard, Deep]
+
+# Reference model version (mirror of the published firmware)
+reference_model_version: "v1.7.0"
+
+# Protocol constants mirrored from the ESP32 firmware
+half_packets: 12
+maximum_payload_bytes: 32
+hex_payload_prefix: "0xAA"
+
+# Simulation classification
+simulation_classification: "SIMULATED -- NOT PHYSICAL HARDWARE MEASUREMENTS"

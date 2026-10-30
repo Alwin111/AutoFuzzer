@@ -1,0 +1,2 @@
+UART: /home/spartan/.gemini/antigravity/brain/0aad0add-0941-4e64-8a8c-1ae3d36fc664/scratch/venv/bin/pio device monitor -p /dev/ttyUSB0 -b 115200
+

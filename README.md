@@ -81,7 +81,7 @@ UART quick test completed — 258 packets across 7 mutation phases, 14 NACKs, 0 
 │                                                 │
 │  GPIO 17 (TX2) ──→ Fuzzed Packets ──→ DUT RX  │
 │  GPIO 16 (RX2) ←── ACK/NACK Response ←── DUT TX│
-│  GPIO 25        ←── Heartbeat Signal  ←── DUT   │
+│  GPIO 26        ←── Heartbeat Signal  ←── DUT   │
 │                                                 │
 │  OLED (I2C) │ Buttons │ LEDs │ Buzzer           │
 └─────────┬───────────────────────────────────────┘
@@ -101,7 +101,7 @@ UART quick test completed — 258 packets across 7 mutation phases, 14 NACKs, 0 
 | :--- | :--- | :--- | :--- | :--- |
 | **STM32 Nucleo-F446RE** | ✅ Tested | PA10 (RX), PA9 (TX) | PB5 | Morpho header pins |
 | **Arduino Nano** | ✅ Tested | D3 (RX), D2 (TX) | D4 | SoftwareSerial — D2/D3 |
-| **ESP32** | ✅ Tested | GPIO16 (RX), GPIO17 (TX) | GPIO25 | Loopback mode |
+| **ESP32** | ✅ Tested | GPIO16 (RX), GPIO17 (TX) | GPIO26 | Loopback mode |
 
 > **Arduino Nano uses SoftwareSerial (D2/D3)** — not D0/D1. D0/D1 are shared with the CH340 USB chip and cannot be used while USB is connected.
 
@@ -113,7 +113,7 @@ UART quick test completed — 258 packets across 7 mutation phases, 14 NACKs, 0 
 | :--- | :--- | :--- |
 | **GPIO 12** | **UP** | Navigate up through menu |
 | **GPIO 13** | **DOWN** | Navigate down through menu |
-| **GPIO 27** | **SELECT** | Confirm / Start test |
+| **GPIO 25** | **SELECT** | Confirm / Start test (moved from GPIO27 — pin fault) |
 | **GPIO 14** | **BACK** | Back / Cancel |
 
 ---
@@ -148,7 +148,7 @@ UART quick test completed — 258 packets across 7 mutation phases, 14 NACKs, 0 
 ```
 ESP32 GPIO 17 (TX)  ──→  Nano D3 (RX - SoftwareSerial)
 ESP32 GPIO 16 (RX)  ←──  Nano D2 (TX - SoftwareSerial)
-ESP32 GPIO 25       ←──  Nano D4 (Heartbeat)
+ESP32 GPIO 26       ←──  Nano D4 (Heartbeat)
 ESP32 GND           ──→  Nano GND
 ```
 
@@ -159,7 +159,7 @@ ESP32 GND           ──→  Nano GND
 ```
 ESP32 GPIO 17 (TX)  ──→  STM32 PA10 (USART1_RX)
 ESP32 GPIO 16 (RX)  ←──  STM32 PA9  (USART1_TX)
-ESP32 GPIO 25       ←──  STM32 PB5  (Heartbeat)
+ESP32 GPIO 26       ←──  STM32 PB5  (Heartbeat)
 ESP32 GND           ──→  STM32 GND
 ```
 
@@ -167,7 +167,7 @@ ESP32 GND           ──→  STM32 GND
 
 | Protocol | ESP32 | STM32 | Status |
 | :--- | :--- | :--- | :--- |
-| SPI | 23 MOSI, 19 MISO, 18 SCK, 5 CS | PA7 MOSI, PA6 MISO, PA5 SCK, PA4 NSS | Stubbed |
+| SPI | 23 MOSI, 19 MISO, 18 SCK, 5 CS | PA7 MOSI, PA6 MISO, PB3 SCK*, PA4 NSS | Stubbed — *PA5 carries the DUT heartbeat (LED), not SCK |
 | I2C | 21 SDA, 22 SCL | PB7 SDA, PB6 SCL | Stubbed |
 | CAN | 26 TX, 25 RX | PB9 TX, PB8 RX | Requires transceiver |
 
@@ -481,7 +481,7 @@ python -m pytest tests/test_core.py::TestFailureClassification -v
 | Duration | 30 seconds |
 | Packets Sent | 600 |
 | Failures | 0 |
-| Heartbeat | OK (D4 ← ESP32 GPIO25) |
+| Heartbeat | OK (D4 ← ESP32 GPIO26) |
 | Phases Completed | 7/7 (BASELINE → RANDOM) |
 | Verdict | **PASS** |
 | Robustness Score | **94/100** |
@@ -604,7 +604,7 @@ AutoFuzzer/
 | **Nano D0/D1 conflict** | D0/D1 shared with CH340 USB chip | Switched to D2/D3 (SoftwareSerial) |
 | **Wiring diagram pin swap** | OLED showed D2=RX, D3=TX but firmware had it reversed | Fixed diagram to match firmware: D3=RX, D2=TX |
 | **STM32 FAIL.TXT** | ST-Link cannot identify MCU | Hardware issue — MCU may be defective or locked |
-| **Heartbeat spam** | Floating GPIO25 pin toggling rapidly | Added edge debounce and timeout suppression |
+| **Heartbeat spam** | Floating GPIO26 pin toggling rapidly | Added edge debounce and timeout suppression |
 | **Serial command stuck in protocol check** | START command entered protocol check but couldn't proceed via serial | Auto-start if heartbeat already alive when using serial |
 | **DTR/RTS toggle** | avrdude hanging on Nano clone | Python script toggles DTR/RTS to trigger CH340 reset |
 

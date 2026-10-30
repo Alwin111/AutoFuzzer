@@ -1,0 +1,89 @@
+# AutoFuzzer — hardware campaign configuration (example)
+# Copy to runs/<board>_<target>_<protocol>.yaml, then run:
+#   python3 research_validation/hardware_runs/experiment_runner.py --config <that_file>
+
+# Target board / reference DUT (do not change the controller name)
+controller:
+  board: "esp32_devkit_v1"
+  firmware_version: "v1.7.0"
+
+# Target board under test
+target:
+  board: "arduino_nano"          # options: arduino_nano, stm32_nucleo, esp32_loopback, custom
+  interface: "uart"              # uart | spi | i2c  (spi/i2c are protocol stubs)
+
+protocol:
+  uart:
+    baud_rate: 115200
+    pin_rx: 17
+    pin_tx: 16
+  spi:
+    # stub: not wired end-to-end; replace with the real protocol parser
+    bus_speed: 1000000
+  i2c:
+    # stub: not wired end-to-end; replace with the real protocol parser
+    bus_speed: 100000
+
+pin_mapping:
+  # ESP32 -> DUT controller pins; non-UART protocols use the protocol default
+  response: 16      # DUT ACK/NACK (or fixture)
+  heartbeat: 26     # DUT heartbeat (or fixture)
+  cmd_tx: 17        # controller -> DUT TX
+  cmd_rx: 16        # controller <- DUT RX
+  btn_up: 33
+  btn_down: 32
+  btn_select: 39
+  btn_back: 34
+  led_green: 2
+  led_red: 4
+  oled_sda: 18
+  oled_scl: 19
+
+campaign:
+  # profile: quick | standard | deep | custom
+  profile: quick
+  duration_seconds: 30
+  custom_duration_seconds: 30
+  mutation:
+    # 10 classes in firmware; 7 used in the published evaluation
+    VALID:        0.35
+    EMPTY:        0.05
+    MAX_LEN:      0.05
+    OVERLENGTH:   0.10
+    BAD_CHECKSUM: 0.15
+    TRUNCATED:    0.10
+    RANDOM:       0.10
+    BAD_HEADER:   0.03
+    BAD_LEN:      0.03
+    SEQ_JUMP:     0.04
+  phases:
+    baseline:
+      classes: [VALID, EMPTY, MAX_LEN]
+      seconds: 10
+    boundary:
+      classes: [OVERLENGTH, MAX_LEN]
+      seconds: 10
+    malformed:
+      classes: [BAD_CHECKSUM, TRUNCATED, BAD_HEADER, BAD_LEN, SEQ_JUMP]
+      seconds: 10
+  quick:
+    baseline: [VALID, EMPTY, MAX_LEN]
+    boundary: [OVERLENGTH, BAD_CHECKSUM]
+    malformed: [TRUNCATED, RANDOM]
+    duration_seconds: 30
+
+control:
+  seed: 20261030
+  response_timeout_seconds: 0.500
+  heartbeat_timeout_seconds: 0.350
+  grace_period_seconds: 2.0      # wait for a heartbeat before starting the campaign
+  max_payload_bytes: 32
+  max_failure_records: 20
+  replay_count: 3
+  minimum_iterations: 200
+  max_iterations: 5000
+
+logging:
+  output_dir: "runs/20261030_001"
+  log_response_lines: true
+  log_every_n_packets: 1

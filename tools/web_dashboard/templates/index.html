@@ -3,1489 +3,1293 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>AutoFuzzer Dashboard</title>
+<title>AutoFuzzer — Live Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600;700&family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.4/socket.io.min.js"></script>
 <style>
-/* ============================================================
-   ROOT / THEME
-   ============================================================ */
+/* =====================================================
+   DESIGN TOKENS
+   ===================================================== */
 :root {
-    --bg:          #0a0e17;
-    --bg-card:     #111827;
-    --bg-card-alt: #1a2234;
-    --bg-input:    #0d1420;
-    --border:      #1e2d44;
-    --border-glow: #00d4ff22;
-    --text:        #e2e8f0;
-    --text-dim:    #64748b;
-    --text-bright: #f8fafc;
-    --accent:      #00d4ff;
-    --accent-dim:  #00d4ff33;
-    --green:       #22c55e;
-    --green-dim:   #22c55e22;
-    --red:         #ef4444;
-    --red-dim:     #ef444422;
-    --yellow:      #eab308;
-    --yellow-dim:  #eab30822;
-    --orange:      #f97316;
-    --purple:      #a78bfa;
-    --pink:        #ec4899;
-    --font:        'JetBrains Mono', 'Fira Code', 'SF Mono', 'Consolas', monospace;
+  --bg:        #080c14;
+  --bg2:       #0d1424;
+  --bg3:       #111e32;
+  --border:    #1a2a45;
+  --glow-c:    #00d4ff;
+  --glow-g:    #22c55e;
+  --glow-r:    #ef4444;
+  --glow-y:    #eab308;
+  --glow-p:    #a78bfa;
+  --glow-o:    #f97316;
+  --text:      #c8d8f0;
+  --text-dim:  #4a6080;
+  --text-hi:   #f0f8ff;
+  --accent:    #00d4ff;
+  --green:     #22c55e;
+  --red:       #ef4444;
+  --yellow:    #eab308;
+  --purple:    #a78bfa;
+  --orange:    #f97316;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
+  --font-ui:   'Inter', sans-serif;
+  --r:         8px;
 }
 
-* { margin: 0; padding: 0; box-sizing: border-box; }
+* { margin:0; padding:0; box-sizing:border-box; }
 
 body {
-    font-family: var(--font);
-    background: var(--bg);
-    color: var(--text);
-    min-height: 100vh;
-    overflow-x: hidden;
+  font-family: var(--font-mono);
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+  overflow-x: hidden;
 }
 
-/* ============================================================
+/* =====================================================
+   SCANLINE OVERLAY
+   ===================================================== */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,212,255,0.015) 2px,
+    rgba(0,212,255,0.015) 4px
+  );
+  pointer-events: none;
+  z-index: 1000;
+}
+
+/* =====================================================
    HEADER
-   ============================================================ */
+   ===================================================== */
 .header {
-    background: linear-gradient(135deg, #0f1729, #162033);
-    border-bottom: 1px solid var(--border);
-    padding: 16px 24px;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    position: sticky;
-    top: 0;
-    z-index: 100;
+  background: linear-gradient(180deg, #0d1930 0%, #080c14 100%);
+  border-bottom: 1px solid var(--border);
+  padding: 12px 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  box-shadow: 0 4px 30px rgba(0,0,0,0.5);
 }
 
-.header-left {
-    display: flex;
-    align-items: center;
-    gap: 16px;
+.logo-wrap { display:flex; align-items:center; gap:14px; }
+
+.logo-icon {
+  width: 38px; height: 38px;
+  background: linear-gradient(135deg, #00d4ff, #0066ff);
+  border-radius: 8px;
+  display: flex; align-items:center; justify-content:center;
+  font-size: 18px;
+  box-shadow: 0 0 20px rgba(0,212,255,0.4);
 }
 
-.logo {
-    font-size: 20px;
-    font-weight: 700;
-    color: var(--accent);
-    letter-spacing: 2px;
-}
+.logo-text { font-family: var(--font-ui); }
+.logo-title { font-size:18px; font-weight:800; color:var(--text-hi); letter-spacing:2px; }
+.logo-sub { font-size:10px; color:var(--text-dim); letter-spacing:1.5px; margin-top:2px; }
 
-.logo-sub {
-    font-size: 11px;
-    color: var(--text-dim);
-    letter-spacing: 1px;
+/* LIVE badge */
+.live-badge {
+  display: flex; align-items:center; gap:6px;
+  background: rgba(239,68,68,0.15);
+  border: 1px solid var(--red);
+  border-radius: 20px;
+  padding: 4px 12px;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--red);
+  letter-spacing: 2px;
 }
+.live-badge.active { animation: livepulse 1.2s ease-in-out infinite; }
+@keyframes livepulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.4); }
+  50%      { box-shadow: 0 0 0 6px rgba(239,68,68,0); }
+}
+.live-dot {
+  width:8px; height:8px; border-radius:50%;
+  background: var(--red);
+  animation: blink 1s step-end infinite;
+}
+@keyframes blink { 50% { opacity:0; } }
 
-.header-right {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-}
+.header-right { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
 
-.conn-status {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    font-size: 12px;
-    color: var(--text-dim);
+.conn-pill {
+  display:flex; align-items:center; gap:8px;
+  background: var(--bg3);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 6px 14px;
+  font-size: 12px;
+  transition: all 0.3s;
 }
-
-.conn-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--red);
-    transition: background 0.3s;
-}
-
-.conn-dot.online {
-    background: var(--green);
-    box-shadow: 0 0 8px var(--green);
-}
+.conn-pill.online { border-color: var(--green); box-shadow: 0 0 12px rgba(34,197,94,0.2); }
+.conn-dot { width:8px; height:8px; border-radius:50%; background:var(--red); transition:all 0.3s; }
+.conn-dot.online { background:var(--green); box-shadow:0 0 8px var(--green); animation: hbpulse 2s ease infinite; }
+@keyframes hbpulse { 0%,100%{opacity:1} 50%{opacity:0.6} }
 
 .btn {
-    padding: 6px 14px;
-    border-radius: 6px;
-    border: 1px solid var(--border);
-    background: var(--bg-card);
-    color: var(--text);
-    font-family: var(--font);
-    font-size: 12px;
-    cursor: pointer;
-    transition: all 0.2s;
+  padding: 7px 16px; border-radius:6px; border:1px solid var(--border);
+  background: var(--bg3); color:var(--text); font-family:var(--font-mono); font-size:12px;
+  cursor:pointer; transition:all 0.2s; white-space:nowrap;
+}
+.btn:hover { border-color:var(--accent); color:var(--accent); }
+.btn:disabled { opacity:0.5; cursor:not-allowed; }
+.btn-primary { background:var(--accent); color:#000; border-color:var(--accent); font-weight:700; }
+.btn-primary:hover { background:#33dfff; color:#000; }
+.btn-danger { border-color:var(--red); color:var(--red); }
+.btn-danger:hover { background:rgba(239,68,68,0.1); }
+
+select.btn { min-width:160px; }
+
+/* =====================================================
+   MAIN LAYOUT
+   ===================================================== */
+.main {
+  display: grid;
+  grid-template-columns: 260px 1fr 340px;
+  gap: 14px;
+  padding: 14px 20px;
+  max-width: 1900px;
+  margin: 0 auto;
 }
 
-.btn:hover {
-    background: var(--bg-card-alt);
-    border-color: var(--accent);
-}
-
-.btn-primary {
-    background: var(--accent);
-    color: #000;
-    border-color: var(--accent);
-    font-weight: 600;
-}
-
-.btn-primary:hover {
-    background: #33dfff;
-}
-
-.btn-danger {
-    border-color: var(--red);
-    color: var(--red);
-}
-
-.btn-danger:hover {
-    background: var(--red-dim);
-}
-
-.btn-success {
-    border-color: var(--green);
-    color: var(--green);
-}
-
-.btn-success:hover {
-    background: var(--green-dim);
-}
-
-/* ============================================================
-   LAYOUT
-   ============================================================ */
-.dashboard {
-    display: grid;
-    grid-template-columns: 280px 1fr 320px;
-    grid-template-rows: auto auto 1fr;
-    gap: 16px;
-    padding: 16px 24px;
-    max-width: 1800px;
-    margin: 0 auto;
-    min-height: calc(100vh - 64px);
-}
-
-/* ============================================================
+/* =====================================================
    CARDS
-   ============================================================ */
+   ===================================================== */
 .card {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    overflow: hidden;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  overflow: hidden;
+  position: relative;
 }
 
-.card-header {
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--border);
-    font-size: 11px;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 1.5px;
-    color: var(--text-dim);
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
+.card-hd {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--text-dim);
+  display: flex; align-items:center; justify-content:space-between;
 }
 
-.card-body {
-    padding: 14px;
+.card-bd { padding:12px 14px; }
+
+/* =====================================================
+   LEFT COLUMN — STATUS
+   ===================================================== */
+.left-col {
+  display: flex; flex-direction:column; gap:12px;
+  grid-row: 1 / 4;
 }
 
-/* ============================================================
-   STATUS PANEL (left column)
-   ============================================================ */
-.status-panel {
-    grid-row: 1 / 4;
-    display: flex;
-    flex-direction: column;
-    gap: 16px;
+.stat-row {
+  display:flex; justify-content:space-between; align-items:center;
+  padding: 7px 0;
+  border-bottom: 1px solid rgba(26,42,69,0.7);
+  font-size: 12px;
+}
+.stat-row:last-child { border-bottom:none; }
+.stat-lbl { color:var(--text-dim); }
+.stat-val { font-weight:700; color:var(--text-hi); }
+.stat-val.ok   { color:var(--green); }
+.stat-val.fail { color:var(--red); }
+.stat-val.warn { color:var(--yellow); }
+.stat-val.cyan { color:var(--accent); }
+
+/* Heartbeat card */
+.hb-card {
+  display:flex; align-items:center; gap:10px;
+  padding:12px 14px; border-radius:6px;
+  font-size:13px; font-weight:700;
+  transition: all 0.4s;
+}
+.hb-card.alive   { background:rgba(34,197,94,0.08);  border:1px solid var(--green); color:var(--green); }
+.hb-card.waiting { background:rgba(0,212,255,0.08);  border:1px solid var(--accent); color:var(--accent); }
+.hb-card.dead    { background:rgba(239,68,68,0.08);  border:1px solid var(--red);   color:var(--red); animation:redpulse 1s infinite; }
+@keyframes redpulse { 0%,100%{opacity:1} 50%{opacity:0.5} }
+.hb-dot-big { width:12px; height:12px; border-radius:50%; background:currentColor; }
+.hb-dot-big.alive { animation: hbpulse 1s ease infinite; }
+
+/* Verdict */
+.verdict {
+  text-align:center; padding:14px; border-radius:6px;
+  font-size:16px; font-weight:800; letter-spacing:3px;
+  transition: all 0.4s;
+}
+.verdict.waiting  { background:rgba(0,212,255,0.07); border:1px solid var(--accent); color:var(--accent); animation:cyanpulse 2s infinite; }
+.verdict.running  { background:rgba(0,212,255,0.07); border:1px solid var(--accent); color:var(--accent); animation:cyanpulse 1.5s infinite; }
+.verdict.pass     { background:rgba(34,197,94,0.1);  border:1px solid var(--green); color:var(--green); }
+.verdict.fail     { background:rgba(239,68,68,0.1);  border:1px solid var(--red);  color:var(--red); animation:redpulse 1s infinite; }
+.verdict.complete { background:rgba(167,139,250,0.1); border:1px solid var(--purple); color:var(--purple); }
+@keyframes cyanpulse { 0%,100%{box-shadow:0 0 0 0 rgba(0,212,255,0.3)} 50%{box-shadow:0 0 15px 4px rgba(0,212,255,0.1)} }
+
+/* Progress */
+.prog-bar { height:6px; background:var(--border); border-radius:3px; overflow:hidden; margin:8px 0; }
+.prog-fill {
+  height:100%; border-radius:3px; width:0%;
+  background: linear-gradient(90deg, var(--accent), var(--purple));
+  transition: width 0.8s ease;
+  box-shadow: 0 0 8px var(--accent);
 }
 
-.status-item {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    padding: 8px 0;
-    border-bottom: 1px solid #1a2234;
-    font-size: 12px;
+/* Timeline */
+.timeline { max-height:220px; overflow-y:auto; }
+.tl-item { display:flex; align-items:center; gap:8px; padding:5px 0; font-size:11px; border-bottom:1px solid rgba(26,42,69,0.5); }
+.tl-item:last-child { border:none; }
+.tl-dot { width:6px; height:6px; border-radius:50%; flex-shrink:0; }
+.tl-start    { background:var(--green); }
+.tl-phase    { background:var(--accent); }
+.tl-failure  { background:var(--red); }
+.tl-complete { background:var(--purple); }
+.tl-verdict  { background:var(--orange); }
+.tl-replay   { background:var(--yellow); }
+.tl-text     { color:var(--text-dim); }
+.tl-text strong { color:var(--text-hi); }
+
+/* =====================================================
+   CENTER — COUNTERS (big numbers)
+   ===================================================== */
+.center-col { display:flex; flex-direction:column; gap:12px; }
+
+.counters-row {
+  display: grid;
+  grid-template-columns: repeat(5,1fr);
+  gap: 10px;
 }
 
-.status-item:last-child { border-bottom: none; }
+.ctr {
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+  padding: 16px 8px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.3s;
+}
+.ctr::before {
+  content:'';
+  position:absolute; top:0; left:0; right:0; height:2px;
+  background: var(--ctr-color, var(--accent));
+  opacity: 0.6;
+}
+.ctr:hover { border-color: var(--ctr-color, var(--accent)); }
 
-.status-label { color: var(--text-dim); }
-.status-value { color: var(--text-bright); font-weight: 600; }
+.ctr-val {
+  font-size: 36px;
+  font-weight: 700;
+  color: var(--ctr-color, var(--accent));
+  line-height: 1;
+  margin-bottom: 6px;
+  transition: transform 0.15s;
+  display: block;
+}
+.ctr-val.bump { animation: bump 0.25s ease; }
+@keyframes bump { 0%{transform:scale(1)} 40%{transform:scale(1.18)} 100%{transform:scale(1)} }
+.ctr-lbl { font-size:9px; color:var(--text-dim); text-transform:uppercase; letter-spacing:2px; }
 
-.status-value.ok { color: var(--green); }
-.status-value.fail { color: var(--red); }
-.status-value.warn { color: var(--yellow); }
+/* Rate badge */
+.rate-badge {
+  font-size:9px; color:var(--text-dim);
+  margin-top:4px;
+  display:block;
+}
 
-/* ============================================================
-   BIG GAUGE (center top)
-   ============================================================ */
-.gauge-area {
-    grid-column: 2;
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    gap: 16px;
+/* =====================================================
+   GAUGES ROW
+   ===================================================== */
+.gauges-row {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
 }
 
 .gauge-card {
-    text-align: center;
-    padding: 20px 14px;
+  background: var(--bg2); border:1px solid var(--border);
+  border-radius: var(--r); padding: 16px;
+  text-align:center; position:relative; overflow:hidden;
 }
 
-.gauge-ring {
-    width: 100px;
-    height: 100px;
-    margin: 0 auto 12px;
-    position: relative;
-}
-
-.gauge-ring svg {
-    transform: rotate(-90deg);
-    width: 100px;
-    height: 100px;
-}
+.gauge-ring { width:100px; height:100px; margin:0 auto 8px; position:relative; }
+.gauge-ring svg { transform:rotate(-90deg); }
 
 .gauge-ring circle {
-    fill: none;
-    stroke-width: 8;
-    stroke-linecap: round;
+  fill:none; stroke-width:8; stroke-linecap:round;
+  cx: 50; cy: 50; r: 40;
+}
+.gauge-ring .bg-c { stroke: var(--border); }
+.gauge-ring .fg-c {
+  stroke-dasharray: 251;
+  stroke-dashoffset: 251;
+  transition: stroke-dashoffset 0.8s ease, stroke 0.5s;
+}
+.gauge-num {
+  position:absolute; top:50%; left:50%;
+  transform: translate(-50%,-50%);
+  font-size:20px; font-weight:700; color:var(--text-hi);
+}
+.gauge-lbl { font-size:10px; color:var(--text-dim); text-transform:uppercase; letter-spacing:1px; }
+
+/* =====================================================
+   CHART
+   ===================================================== */
+.chart-wrap { position:relative; height:160px; }
+canvas { width:100% !important; height:100% !important; display:block; }
+
+/* =====================================================
+   MUTATION BARS
+   ===================================================== */
+.mut-row { display:flex; align-items:flex-end; gap:4px; height:90px; padding:0 4px; }
+.mut-bar { flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; }
+.mut-fill {
+  width:100%; min-height:3px; border-radius:3px 3px 0 0;
+  transition: height 0.6s ease;
+}
+.mut-count { font-size:10px; font-weight:600; color:var(--text-hi); }
+.mut-name  { font-size:7px; color:var(--text-dim); text-transform:uppercase;
+  writing-mode:vertical-lr; transform:rotate(180deg); max-height:55px;
+  overflow:hidden; text-overflow:ellipsis; }
+
+/* =====================================================
+   RIGHT COLUMN — SERIAL MONITOR
+   ===================================================== */
+.right-col {
+  grid-row: 1 / 4;
+  display: flex;
+  flex-direction: column;
 }
 
-.gauge-ring .bg { stroke: var(--border); }
-
-.gauge-ring .fg {
-    stroke: var(--accent);
-    stroke-dasharray: 251;
-    stroke-dashoffset: 251;
-    transition: stroke-dashoffset 1s ease, stroke 0.5s;
-}
-
-.gauge-value {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    font-size: 22px;
-    font-weight: 700;
-    color: var(--text-bright);
-}
-
-.gauge-label {
-    font-size: 11px;
-    color: var(--text-dim);
-    text-transform: uppercase;
-    letter-spacing: 1px;
-}
-
-/* ============================================================
-   COUNTERS ROW
-   ============================================================ */
-.counters {
-    grid-column: 2;
-    display: grid;
-    grid-template-columns: repeat(5, 1fr);
-    gap: 12px;
-}
-
-.counter-card {
-    text-align: center;
-    padding: 14px 8px;
-}
-
-.counter-value {
-    font-size: 28px;
-    font-weight: 700;
-    color: var(--text-bright);
-    line-height: 1;
-    margin-bottom: 6px;
-}
-
-.counter-label {
-    font-size: 10px;
-    color: var(--text-dim);
-    text-transform: uppercase;
-    letter-spacing: 1px;
-}
-
-.counter-value.green { color: var(--green); }
-.counter-value.red { color: var(--red); }
-.counter-value.yellow { color: var(--yellow); }
-.counter-value.cyan { color: var(--accent); }
-.counter-value.purple { color: var(--purple); }
-
-/* ============================================================
-   TIMELINE CHART
-   ============================================================ */
-.chart-area {
-    grid-column: 2;
-    min-height: 200px;
-}
-
-.chart-container {
-    position: relative;
-    height: 180px;
-    padding: 10px;
-}
-
-canvas {
-    width: 100% !important;
-    height: 100% !important;
-}
-
-/* ============================================================
-   MUTATION BAR CHART
-   ============================================================ */
-.mutations-area {
-    grid-column: 1 / 4;
-}
-
-.mutation-bars {
-    display: flex;
-    gap: 6px;
-    align-items: flex-end;
-    height: 100px;
-    padding: 0 4px;
-}
-
-.mutation-bar {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-}
-
-.mutation-bar-fill {
-    width: 100%;
-    min-height: 2px;
-    border-radius: 3px 3px 0 0;
-    transition: height 0.5s ease;
-    background: var(--accent);
-}
-
-.mutation-bar-fill.nack { background: var(--yellow); }
-.mutation-bar-fill.error { background: var(--red); }
-
-.mutation-bar-label {
-    font-size: 8px;
-    color: var(--text-dim);
-    text-transform: uppercase;
-    writing-mode: vertical-lr;
-    transform: rotate(180deg);
-    max-height: 60px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-}
-
-.mutation-bar-count {
-    font-size: 10px;
-    color: var(--text-bright);
-    font-weight: 600;
-}
-
-/* ============================================================
-   SERIAL LOG (right column)
-   ============================================================ */
 .serial-panel {
-    grid-row: 1 / 4;
-    display: flex;
-    flex-direction: column;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
-.serial-panel .card-body {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    padding: 0;
+.serial-panel .card-bd {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+  min-height: 0;
 }
 
-.serial-input-row {
-    display: flex;
-    gap: 6px;
-    padding: 8px 12px;
-    border-bottom: 1px solid var(--border);
+/* Live stream indicator in header */
+.stream-dot {
+  width:6px; height:6px; border-radius:50%; background:var(--text-dim);
+  transition: background 0.2s;
+  display:inline-block;
+}
+.stream-dot.active { background:var(--green); box-shadow:0 0 6px var(--green); }
+
+/* Log */
+.log-box {
+  flex:1;
+  overflow-y: auto;
+  padding: 8px 12px;
+  font-size: 11px;
+  line-height: 1.65;
+  min-height: 0;
+  max-height: calc(100vh - 280px);
 }
 
-.serial-input {
-    flex: 1;
-    padding: 6px 10px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    background: var(--bg-input);
-    color: var(--text-bright);
-    font-family: var(--font);
-    font-size: 12px;
-    outline: none;
-}
+.log-line { word-break:break-all; transition: background 0.3s; padding:1px 3px; border-radius:3px; }
+.log-line.new-flash { animation: lineflash 0.5s ease; }
+@keyframes lineflash { 0%{background:rgba(0,212,255,0.15)} 100%{background:transparent} }
 
-.serial-input:focus {
-    border-color: var(--accent);
-}
+.ts { color:#2a3f5f; margin-right:6px; }
+.log-line.sys     { color:var(--yellow); }
+.log-line.ok      { color:var(--green); }
+.log-line.fail    { color:var(--red); font-weight:600; }
+.log-line.phase   { color:var(--accent); }
+.log-line.normal  { color:var(--text-dim); }
 
-.serial-log {
-    flex: 1;
-    overflow-y: auto;
-    padding: 8px 12px;
-    font-size: 11px;
-    line-height: 1.6;
-    max-height: calc(100vh - 200px);
-    min-height: 500px;
+/* Input row */
+.cmd-row {
+  display:flex; gap:6px; padding:8px 12px;
+  border-top: 1px solid var(--border);
 }
-
-.log-line {
-    color: var(--text-dim);
-    word-break: break-all;
+.cmd-input {
+  flex:1; padding:7px 10px; border:1px solid var(--border);
+  border-radius:5px; background:var(--bg); color:var(--text-hi);
+  font-family:var(--font-mono); font-size:12px; outline:none;
+  transition: border-color 0.2s;
 }
+.cmd-input:focus { border-color:var(--accent); box-shadow:0 0 0 2px rgba(0,212,255,0.1); }
 
-.log-line .ts {
-    color: #334155;
-    margin-right: 6px;
+/* Quick cmd grid */
+.quick-grid {
+  display:grid; grid-template-columns:repeat(4,1fr); gap:5px;
+  padding:8px 12px; border-top:1px solid var(--border);
 }
-
-.log-line.failure {
-    color: var(--red);
-    font-weight: 600;
+.qb {
+  padding:6px 4px; border:1px solid var(--border); border-radius:4px;
+  background:var(--bg); color:var(--text); font-family:var(--font-mono);
+  font-size:10px; cursor:pointer; text-align:center; transition:all 0.18s;
 }
+.qb:hover { background:rgba(0,212,255,0.08); border-color:var(--accent); color:var(--accent); }
+.qb.start { border-color:var(--green); color:var(--green); }
+.qb.start:hover { background:rgba(34,197,94,0.1); }
+.qb.stop  { border-color:var(--red); color:var(--red); }
+.qb.stop:hover  { background:rgba(239,68,68,0.1); }
+.qb:active { transform:scale(0.96); }
 
-.log-line.success {
-    color: var(--green);
+/* =====================================================
+   PACKETS/SEC SPARKLINE area
+   ===================================================== */
+.pps-wrap {
+  display: flex; align-items:center; gap:12px;
+  padding: 6px 14px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+  font-size: 11px; color:var(--text-dim);
 }
+.pps-val { font-size:20px; font-weight:700; color:var(--accent); }
+.pps-unit { font-size:10px; }
 
-.log-line.phase {
-    color: var(--accent);
-}
-
-.log-line.system {
-    color: var(--yellow);
-}
-
-/* ============================================================
-   HEARTBEAT INDICATOR
-   ============================================================ */
-.hb-indicator {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 10px 14px;
-    border-radius: 8px;
-    font-size: 13px;
-    font-weight: 600;
-}
-
-.hb-indicator.alive {
-    background: var(--green-dim);
-    border: 1px solid var(--green);
-    color: var(--green);
-}
-
-.hb-indicator.waiting {
-    background: var(--accent-dim);
-    border: 1px solid var(--accent);
-    color: var(--accent);
-}
-
-.hb-indicator.dead {
-    background: var(--red-dim);
-    border: 1px solid var(--red);
-    color: var(--red);
-    animation: pulse-red 1s infinite;
-}
-
-@keyframes pulse-red {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.6; }
-}
-
-.hb-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    background: currentColor;
-}
-
-.hb-dot.alive {
-    animation: hb-blink 1s infinite;
-}
-
-@keyframes hb-blink {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.3; }
-}
-
-/* ============================================================
-   VERDICT BANNER
-   ============================================================ */
-.verdict-banner {
-    padding: 16px 20px;
-    border-radius: 10px;
-    text-align: center;
-    font-size: 18px;
-    font-weight: 700;
-    letter-spacing: 2px;
-    margin-bottom: 12px;
-}
-
-.verdict-banner.pass {
-    background: linear-gradient(135deg, #052e16, #14532d);
-    border: 1px solid var(--green);
-    color: var(--green);
-}
-
-.verdict-banner.fail {
-    background: linear-gradient(135deg, #450a0a, #7f1d1d);
-    border: 1px solid var(--red);
-    color: var(--red);
-}
-
-.verdict-banner.testing {
-    background: linear-gradient(135deg, #0c1a30, #1e3a5f);
-    border: 1px solid var(--accent);
-    color: var(--accent);
-    animation: pulse-blue 2s infinite;
-}
-
-@keyframes pulse-blue {
-    0%, 100% { box-shadow: 0 0 0 0 var(--accent-dim); }
-    50% { box-shadow: 0 0 20px 4px var(--accent-dim); }
-}
-
-/* ============================================================
+/* =====================================================
    SCROLLBAR
-   ============================================================ */
-::-webkit-scrollbar { width: 6px; }
-::-webkit-scrollbar-track { background: var(--bg); }
-::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #2a3a55; }
+   ===================================================== */
+::-webkit-scrollbar { width:4px; }
+::-webkit-scrollbar-track { background:var(--bg); }
+::-webkit-scrollbar-thumb { background:#1a2a45; border-radius:2px; }
+::-webkit-scrollbar-thumb:hover { background:#243650; }
 
-/* ============================================================
-   QUICK COMMANDS
-   ============================================================ */
-.quick-cmds {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 6px;
-    padding: 8px 12px;
-    border-top: 1px solid var(--border);
+/* =====================================================
+   HIDDEN / UTILITY
+   ===================================================== */
+.hidden { display:none !important; }
+
+/* Responsive */
+@media (max-width:1300px) {
+  .main { grid-template-columns: 240px 1fr; }
+  .right-col { grid-row:auto; grid-column:1/-1; }
+  .left-col { grid-row:auto; }
 }
-
-.cmd-btn {
-    padding: 6px 4px;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    background: var(--bg-input);
-    color: var(--text);
-    font-family: var(--font);
-    font-size: 10px;
-    cursor: pointer;
-    text-align: center;
-    transition: all 0.2s;
-}
-
-.cmd-btn:hover {
-    border-color: var(--accent);
-    background: var(--accent-dim);
-    color: var(--accent);
-}
-
-.cmd-btn.start { border-color: var(--green); color: var(--green); }
-.cmd-btn.stop { border-color: var(--red); color: var(--red); }
-.cmd-btn.start:hover { background: var(--green-dim); }
-.cmd-btn.stop:hover { background: var(--red-dim); }
-
-/* ============================================================
-   TIMELINE
-   ============================================================ */
-.timeline-events {
-    max-height: 180px;
-    overflow-y: auto;
-    padding: 8px 0;
-}
-
-.timeline-event {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 4px 0;
-    font-size: 11px;
-}
-
-.timeline-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    flex-shrink: 0;
-}
-
-.timeline-dot.start { background: var(--green); }
-.timeline-dot.phase { background: var(--accent); }
-.timeline-dot.failure { background: var(--red); }
-.timeline-dot.complete { background: var(--purple); }
-.timeline-dot.replay { background: var(--yellow); }
-.timeline-dot.verdict { background: var(--orange); }
-
-.timeline-text {
-    color: var(--text-dim);
-}
-
-.timeline-text strong {
-    color: var(--text-bright);
-}
-
-/* ============================================================
-   RESPONSIVE
-   ============================================================ */
-@media (max-width: 1200px) {
-    .dashboard {
-        grid-template-columns: 1fr;
-    }
-    .status-panel, .serial-panel {
-        grid-row: auto;
-    }
-    .gauge-area { grid-column: 1; }
-    .counters { grid-column: 1; }
-    .chart-area { grid-column: 1; }
-    .mutations-area { grid-column: 1; }
-}
-
-/* ============================================================
-   LOADING / CONNECT MODAL
-   ============================================================ */
-.modal-overlay {
-    position: fixed;
-    top: 0; left: 0; right: 0; bottom: 0;
-    background: rgba(0,0,0,0.7);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 200;
-}
-
-.modal {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 30px;
-    max-width: 400px;
-    width: 90%;
-    text-align: center;
-}
-
-.modal h2 {
-    font-size: 18px;
-    margin-bottom: 12px;
-    color: var(--accent);
-}
-
-.modal p {
-    font-size: 13px;
-    color: var(--text-dim);
-    margin-bottom: 20px;
-}
-
-.modal .btn { margin: 4px; }
-
-.hidden { display: none !important; }
-
-/* ============================================================
-   SPINNER
-   ============================================================ */
-.spinner {
-    display: inline-block;
-    width: 16px;
-    height: 16px;
-    border: 2px solid var(--border);
-    border-top-color: var(--accent);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin { to { transform: rotate(360deg); } }
-
-/* ============================================================
-   PROGRESS BAR
-   ============================================================ */
-.progress-bar {
-    width: 100%;
-    height: 6px;
-    background: var(--border);
-    border-radius: 3px;
-    overflow: hidden;
-    margin: 8px 0;
-}
-
-.progress-fill {
-    height: 100%;
-    background: linear-gradient(90deg, var(--accent), var(--purple));
-    border-radius: 3px;
-    transition: width 0.5s ease;
-    width: 0%;
+@media (max-width:900px) {
+  .main { grid-template-columns: 1fr; }
+  .left-col,.right-col { grid-row:auto; }
+  .counters-row { grid-template-columns: repeat(3,1fr); }
+  .gauges-row { grid-template-columns: repeat(2,1fr); }
 }
 </style>
 </head>
 <body>
 
-<!-- ============================================================
-     HEADER
-     ============================================================ -->
+<!-- HEADER -->
 <div class="header">
-    <div class="header-left">
-        <div>
-            <div class="logo">⚡ AUTOFUZZER</div>
-            <div class="logo-sub">EMBEDDED PROTOCOL ROBUSTNESS TESTER</div>
-        </div>
+  <div class="logo-wrap">
+    <div class="logo-icon">⚡</div>
+    <div class="logo-text">
+      <div class="logo-title">AUTOFUZZER</div>
+      <div class="logo-sub">EMBEDDED PROTOCOL ROBUSTNESS TESTER</div>
     </div>
-    <div class="header-right">
-        <div class="conn-status">
-            <div class="conn-dot" id="connDot"></div>
-            <span id="connText">Disconnected</span>
-        </div>
-        <select id="portSelect" class="btn" style="min-width:140px">
-            <option value="">Select port...</option>
-        </select>
-        <button class="btn btn-primary" id="btnConnect" onclick="connectSerial()">Connect</button>
-        <button class="btn btn-danger hidden" id="btnDisconnect" onclick="disconnectSerial()">Disconnect</button>
-        <button class="btn" onclick="refreshPorts()">↻ Refresh</button>
+    <div class="live-badge active" id="liveBadge">
+      <div class="live-dot"></div>
+      LIVE
     </div>
+  </div>
+
+  <div class="header-right">
+    <div class="conn-pill" id="connPill">
+      <div class="conn-dot" id="connDot"></div>
+      <span id="connText">Disconnected</span>
+    </div>
+    <select id="portSelect" class="btn" style="min-width:160px">
+      <option value="">Select port…</option>
+    </select>
+    <button class="btn btn-primary" id="btnConnect" onclick="connectSerial()">Connect</button>
+    <button class="btn btn-danger hidden" id="btnDisconnect" onclick="disconnectSerial()">Disconnect</button>
+    <button class="btn" onclick="refreshPorts()">↻ Ports</button>
+    <button class="btn" onclick="clearLog()">Clear Log</button>
+  </div>
 </div>
 
-<!-- ============================================================
-     DASHBOARD GRID
-     ============================================================ -->
-<div class="dashboard">
+<!-- MAIN GRID -->
+<div class="main">
 
-    <!-- LEFT: STATUS PANEL -->
-    <div class="status-panel">
-        <!-- Heartbeat -->
-        <div class="card">
-            <div class="card-header">DUT Status</div>
-            <div class="card-body">
-                <div class="hb-indicator alive" id="hbIndicator">
-                    <div class="hb-dot alive" id="hbDot"></div>
-                    <span id="hbText">HEARTBEAT OK</span>
-                </div>
-            </div>
-        </div>
+  <!-- =========  LEFT COLUMN  ========= -->
+  <div class="left-col">
 
-        <!-- Campaign Info -->
-        <div class="card">
-            <div class="card-header">Campaign</div>
-            <div class="card-body">
-                <div class="status-item">
-                    <span class="status-label">State</span>
-                    <span class="status-value" id="stateVal">IDLE</span>
-                </div>
-                <div class="status-item">
-                    <span class="status-label">Protocol</span>
-                    <span class="status-value" id="protocolVal">—</span>
-                </div>
-                <div class="status-item">
-                    <span class="status-label">Profile</span>
-                    <span class="status-value" id="profileVal">—</span>
-                </div>
-                <div class="status-item">
-                    <span class="status-label">Phase</span>
-                    <span class="status-value cyan" id="phaseVal">IDLE</span>
-                </div>
-                <div class="status-item">
-                    <span class="status-label">Mutation</span>
-                    <span class="status-value" id="mutationVal">NONE</span>
-                </div>
-            </div>
+    <!-- DUT Heartbeat -->
+    <div class="card">
+      <div class="card-hd">DUT Status</div>
+      <div class="card-bd">
+        <div class="hb-card waiting" id="hbCard">
+          <div class="hb-dot-big" id="hbDotBig"></div>
+          <span id="hbText">WAITING FOR DUT</span>
         </div>
-
-        <!-- Progress -->
-        <div class="card">
-            <div class="card-header">Progress</div>
-            <div class="card-body">
-                <div class="progress-bar">
-                    <div class="progress-fill" id="progressFill"></div>
-                </div>
-                <div class="status-item">
-                    <span class="status-label">Elapsed</span>
-                    <span class="status-value" id="timeVal">0/0s</span>
-                </div>
-                <div class="status-item">
-                    <span class="status-label">Packets</span>
-                    <span class="status-value cyan" id="packetsVal">0</span>
-                </div>
-            </div>
-        </div>
-
-        <!-- Verdict -->
-        <div class="card">
-            <div class="card-header">Result</div>
-            <div class="card-body">
-                <div class="verdict-banner testing" id="verdictBanner">
-                    WAITING
-                </div>
-                <div class="status-item">
-                    <span class="status-label">Score</span>
-                    <span class="status-value" id="scoreVal">—/100</span>
-                </div>
-            </div>
-        </div>
-
-        <!-- Timeline -->
-        <div class="card" style="flex:1">
-            <div class="card-header">Timeline</div>
-            <div class="card-body">
-                <div class="timeline-events" id="timelineEvents">
-                    <div class="timeline-event">
-                        <div class="timeline-dot start"></div>
-                        <span class="timeline-text">System ready</span>
-                    </div>
-                </div>
-            </div>
-        </div>
+      </div>
     </div>
 
-    <!-- CENTER: GAUGES -->
-    <div class="gauge-area">
-        <!-- ACKs Gauge -->
-        <div class="card gauge-card">
-            <div class="card-header">ACKs</div>
-            <div class="card-body">
-                <div class="gauge-ring">
-                    <svg viewBox="0 0 100 100">
-                        <circle class="bg" cx="50" cy="50" r="40"/>
-                        <circle class="fg" id="ackGauge" cx="50" cy="50" r="40"
-                            style="stroke: var(--green);"/>
-                    </svg>
-                    <div class="gauge-value green" id="ackCount">0</div>
-                </div>
-                <div class="gauge-label">Acknowledged</div>
-            </div>
-        </div>
-
-        <!-- NACKs Gauge -->
-        <div class="card gauge-card">
-            <div class="card-header">NACKs</div>
-            <div class="card-body">
-                <div class="gauge-ring">
-                    <svg viewBox="0 0 100 100">
-                        <circle class="bg" cx="50" cy="50" r="40"/>
-                        <circle class="fg" id="nackGauge" cx="50" cy="50" r="40"
-                            style="stroke: var(--yellow);"/>
-                    </svg>
-                    <div class="gauge-value yellow" id="nackCount">0</div>
-                </div>
-                <div class="gauge-label">Rejected</div>
-            </div>
-        </div>
-
-        <!-- Errors Gauge -->
-        <div class="card gauge-card">
-            <div class="card-header">Errors</div>
-            <div class="card-body">
-                <div class="gauge-ring">
-                    <svg viewBox="0 0 100 100">
-                        <circle class="bg" cx="50" cy="50" r="40"/>
-                        <circle class="fg" id="errGauge" cx="50" cy="50" r="40"
-                            style="stroke: var(--red);"/>
-                    </svg>
-                    <div class="gauge-value red" id="errCount">0</div>
-                </div>
-                <div class="gauge-label">Errors</div>
-            </div>
-        </div>
+    <!-- Campaign -->
+    <div class="card">
+      <div class="card-hd">Campaign Info</div>
+      <div class="card-bd">
+        <div class="stat-row"><span class="stat-lbl">State</span><span class="stat-val" id="stateVal">IDLE</span></div>
+        <div class="stat-row"><span class="stat-lbl">Protocol</span><span class="stat-val cyan" id="protoVal">—</span></div>
+        <div class="stat-row"><span class="stat-lbl">Profile</span><span class="stat-val" id="profVal">—</span></div>
+        <div class="stat-row"><span class="stat-lbl">Phase</span><span class="stat-val cyan" id="phaseVal">IDLE</span></div>
+        <div class="stat-row"><span class="stat-lbl">Mutation</span><span class="stat-val" id="mutVal">NONE</span></div>
+        <div class="stat-row"><span class="stat-lbl">Port</span><span class="stat-val" id="portVal">—</span></div>
+      </div>
     </div>
 
-    <!-- CENTER: COUNTERS -->
-    <div class="counters">
-        <div class="card counter-card">
-            <div class="counter-value cyan" id="totalPackets">0</div>
-            <div class="counter-label">Packets</div>
-        </div>
-        <div class="card counter-card">
-            <div class="counter-value green" id="totalAcks">0</div>
-            <div class="counter-label">ACKs</div>
-        </div>
-        <div class="card counter-card">
-            <div class="counter-value yellow" id="totalNacks">0</div>
-            <div class="counter-label">NACKs</div>
-        </div>
-        <div class="card counter-card">
-            <div class="counter-value red" id="totalFailures">0</div>
-            <div class="counter-label">Failures</div>
-        </div>
-        <div class="card counter-card">
-            <div class="counter-value purple" id="totalMutations">0</div>
-            <div class="counter-label">Mutations Used</div>
-        </div>
+    <!-- Progress -->
+    <div class="card">
+      <div class="card-hd">Progress</div>
+      <div class="card-bd">
+        <div class="prog-bar"><div class="prog-fill" id="progFill"></div></div>
+        <div class="stat-row"><span class="stat-lbl">Time</span><span class="stat-val" id="timeVal">0 / 0 s</span></div>
+        <div class="stat-row"><span class="stat-lbl">Score</span><span class="stat-val" id="scoreVal">—</span></div>
+      </div>
     </div>
 
-    <!-- CENTER: TIMELINE CHART -->
-    <div class="card chart-area">
-        <div class="card-header">
-            <span>Packet Timeline</span>
-            <span id="chartInfo" style="color:var(--text-dim)">Live</span>
-        </div>
-        <div class="chart-container">
-            <canvas id="timelineChart"></canvas>
-        </div>
+    <!-- Verdict -->
+    <div class="card">
+      <div class="card-hd">Result</div>
+      <div class="card-bd">
+        <div class="verdict waiting" id="verdictEl">WAITING</div>
+      </div>
     </div>
 
-    <!-- CENTER: MUTATION DISTRIBUTION -->
-    <div class="card mutations-area">
-        <div class="card-header">Mutation Distribution</div>
-        <div class="card-body">
-            <div class="mutation-bars" id="mutationBars">
-                <div style="color:var(--text-dim); font-size:11px; width:100%; text-align:center; padding:20px;">
-                    No mutations yet — start a test
-                </div>
-            </div>
+    <!-- Timeline -->
+    <div class="card" style="flex:1">
+      <div class="card-hd">Timeline</div>
+      <div class="card-bd" style="padding:8px 14px">
+        <div class="timeline" id="timeline">
+          <div class="tl-item"><div class="tl-dot tl-start"></div><span class="tl-text">System ready</span></div>
         </div>
+      </div>
     </div>
 
-    <!-- RIGHT: SERIAL LOG -->
-    <div class="card serial-panel">
-        <div class="card-header">
-            <span>Serial Monitor</span>
-            <button class="btn" onclick="clearLog()" style="padding:2px 8px; font-size:10px">Clear</button>
-        </div>
-        <div class="card-body">
-            <div class="serial-log" id="serialLog">
-                <div class="log-line system">
-                    <span class="ts">[--:--:--]</span> Waiting for connection...
-                </div>
-            </div>
-            <div class="serial-input-row">
-                <input type="text" class="serial-input" id="serialInput" 
-                    placeholder="Type command..." 
-                    onkeydown="if(event.key==='Enter')sendCommand()">
-                <button class="btn btn-primary" onclick="sendCommand()">Send</button>
-            </div>
-            <div class="quick-cmds">
-                <button class="cmd-btn start" onclick="sendQuick('START')">▶ START</button>
-                <button class="cmd-btn stop" onclick="sendQuick('STOP')">⏹ STOP</button>
-                <button class="cmd-btn" onclick="sendQuick('STATUS')">📊 STATUS</button>
-                <button class="cmd-btn" onclick="sendQuick('RESET')">🔄 RESET</button>
-                <button class="cmd-btn" onclick="sendQuick('SETUART')">UART</button>
-                <button class="cmd-btn" onclick="sendQuick('SETSPI')">SPI</button>
-                <button class="cmd-btn" onclick="sendQuick('SETI2C')">I2C</button>
-                <button class="cmd-btn" onclick="sendQuick('RESULT')">📋 RESULT</button>
-                <button class="cmd-btn" onclick="sendQuick('REPLAY')">🔁 REPLAY</button>
-                <button class="cmd-btn" onclick="sendQuick('HELP')">❓ HELP</button>
-                <button class="cmd-btn" onclick="sendQuick('SIMFAIL')">💥 SIMFAIL</button>
-                <button class="cmd-btn" onclick="sendQuick('EXPORT')">📤 EXPORT</button>
-            </div>
-        </div>
+  </div>
+
+  <!-- =========  CENTER COLUMN  ========= -->
+  <div class="center-col">
+
+    <!-- Big counters -->
+    <div class="counters-row">
+      <div class="ctr" style="--ctr-color:var(--accent)">
+        <span class="ctr-val" id="ctrPackets">0</span>
+        <span class="rate-badge" id="ratePackets">—/s</span>
+        <div class="ctr-lbl">Packets</div>
+      </div>
+      <div class="ctr" style="--ctr-color:var(--green)">
+        <span class="ctr-val" id="ctrAcks">0</span>
+        <span class="rate-badge" id="rateAcks">—</span>
+        <div class="ctr-lbl">ACKs</div>
+      </div>
+      <div class="ctr" style="--ctr-color:var(--yellow)">
+        <span class="ctr-val" id="ctrNacks">0</span>
+        <span class="rate-badge" id="rateNacks">—</span>
+        <div class="ctr-lbl">NACKs</div>
+      </div>
+      <div class="ctr" style="--ctr-color:var(--red)">
+        <span class="ctr-val" id="ctrFails">0</span>
+        <span class="rate-badge" id="rateFails">—</span>
+        <div class="ctr-lbl">Failures</div>
+      </div>
+      <div class="ctr" style="--ctr-color:var(--purple)">
+        <span class="ctr-val" id="ctrMuts">0</span>
+        <span class="rate-badge" id="rateMuts">types</span>
+        <div class="ctr-lbl">Mutations</div>
+      </div>
     </div>
 
-</div>
+    <!-- Gauges -->
+    <div class="gauges-row">
+      <div class="gauge-card">
+        <div class="card-hd" style="border:none;padding:0 0 10px 0">ACK Rate</div>
+        <div class="gauge-ring">
+          <svg viewBox="0 0 100 100" width="100" height="100">
+            <circle class="bg-c" cx="50" cy="50" r="40"/>
+            <circle class="fg-c" id="gAck" cx="50" cy="50" r="40" style="stroke:var(--green)"/>
+          </svg>
+          <div class="gauge-num" id="gAckPct">0%</div>
+        </div>
+        <div class="gauge-lbl">Acknowledged</div>
+      </div>
+      <div class="gauge-card">
+        <div class="card-hd" style="border:none;padding:0 0 10px 0">NACK Rate</div>
+        <div class="gauge-ring">
+          <svg viewBox="0 0 100 100" width="100" height="100">
+            <circle class="bg-c" cx="50" cy="50" r="40"/>
+            <circle class="fg-c" id="gNack" cx="50" cy="50" r="40" style="stroke:var(--yellow)"/>
+          </svg>
+          <div class="gauge-num" id="gNackPct">0%</div>
+        </div>
+        <div class="gauge-lbl">Rejected</div>
+      </div>
+      <div class="gauge-card">
+        <div class="card-hd" style="border:none;padding:0 0 10px 0">Robustness</div>
+        <div class="gauge-ring">
+          <svg viewBox="0 0 100 100" width="100" height="100">
+            <circle class="bg-c" cx="50" cy="50" r="40"/>
+            <circle class="fg-c" id="gScore" cx="50" cy="50" r="40" style="stroke:var(--purple)"/>
+          </svg>
+          <div class="gauge-num" id="gScoreVal">—</div>
+        </div>
+        <div class="gauge-lbl">Score / 100</div>
+      </div>
+    </div>
 
-<!-- ============================================================
-     JAVASCRIPT
-     ============================================================ -->
+    <!-- Chart -->
+    <div class="card">
+      <div class="card-hd">
+        <span>Live Packet Timeline</span>
+        <span style="color:var(--text-dim);font-size:10px" id="chartInfo">Streaming…</span>
+      </div>
+      <div class="card-bd" style="padding:8px">
+        <div class="chart-wrap"><canvas id="chart"></canvas></div>
+      </div>
+    </div>
+
+    <!-- Mutation bars -->
+    <div class="card">
+      <div class="card-hd">Mutation Distribution</div>
+      <div class="card-bd">
+        <div class="mut-row" id="mutBars">
+          <div style="color:var(--text-dim);font-size:11px;width:100%;text-align:center;padding:20px 0">No mutations yet — start a test</div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- =========  RIGHT COLUMN — SERIAL MONITOR  ========= -->
+  <div class="right-col">
+    <div class="card serial-panel" style="flex:1">
+      <div class="card-hd">
+        <span>Serial Monitor <span class="stream-dot" id="streamDot"></span></span>
+        <span id="logCount" style="font-size:9px;color:var(--text-dim)">0 lines</span>
+      </div>
+      <div class="card-bd">
+
+        <!-- Packets/sec rate bar -->
+        <div class="pps-wrap">
+          <span class="pps-val" id="ppsVal">0</span>
+          <span class="pps-unit">pkt/s</span>
+          <span style="flex:1"></span>
+          <span id="elapsedLive" style="color:var(--text-dim);font-size:10px">Elapsed: 0s</span>
+        </div>
+
+        <div class="log-box" id="logBox">
+          <div class="log-line sys"><span class="ts">[--:--:--]</span> Dashboard initialising…</div>
+        </div>
+
+        <div class="cmd-row">
+          <input type="text" class="cmd-input" id="cmdInput"
+            placeholder="Type command and press Enter…"
+            onkeydown="if(event.key==='Enter')sendCmd()">
+          <button class="btn btn-primary" onclick="sendCmd()">Send</button>
+        </div>
+
+        <div class="quick-grid">
+          <button class="qb start" onclick="quick('START')">▶ START</button>
+          <button class="qb stop"  onclick="quick('STOP')">⏹ STOP</button>
+          <button class="qb"       onclick="quick('STATUS')">📊 STATUS</button>
+          <button class="qb"       onclick="quick('RESET')">🔄 RESET</button>
+          <button class="qb"       onclick="quick('SETUART')">UART</button>
+          <button class="qb"       onclick="quick('SETSPI')">SPI</button>
+          <button class="qb"       onclick="quick('SETI2C')">I2C</button>
+          <button class="qb"       onclick="quick('RESULT')">📋 RESULT</button>
+          <button class="qb"       onclick="quick('REPLAY')">🔁 REPLAY</button>
+          <button class="qb"       onclick="quick('HELP')">❓ HELP</button>
+          <button class="qb"       onclick="quick('SIMFAIL')">💥 SIMFAIL</button>
+          <button class="qb"       onclick="quick('EXPORT')">📤 EXPORT</button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+</div><!-- /main -->
+
 <script>
-// ============================================================
-// Socket.IO Connection
-// ============================================================
-const socket = io();
-let state = {};
+// ======================================================
+// STATE
+// ======================================================
+const socket = io({ transports: ['polling', 'websocket'] });
+let S = {};                       // latest full state snapshot
 let chartData = [];
-let chartLabels = [];
-let maxChartPoints = 60;
-let chartCtx = null;
-let lastPacketCount = 0;
-let packetRateHistory = [];
+let chartCtx  = null;
+let logLineCount = 0;
+let lastPackets = 0;
+let lastPacketTime = Date.now();
+let ppsSmooth = 0;
+let elapsedSec = 0;              // live elapsed counter
+let streamFlash = false;
 
-// ============================================================
-// Socket Events
-// ============================================================
+// ======================================================
+// SOCKET.IO
+// ======================================================
 socket.on('connect', () => {
-    console.log('WebSocket connected');
-    socket.emit('request_state');
+  log('WebSocket connected to server', 'sys');
+  socket.emit('request_state');
 });
 
-socket.on('connected', (data) => {
-    state = data.state;
-    updateUI();
+socket.on('connected', d => { S = d.state; render(); });
+socket.on('state_update', d => { S = d; render(); });
+
+socket.on('serial_line', d => {
+  // Flash the stream dot
+  flashStream();
+  // Add to log
+  log(d.line, classifyLine(d.line), d.time);
+  // Update state
+  if (d.state) { S = d.state; render(); }
 });
 
-socket.on('state_update', (data) => {
-    state = data;
-    updateUI();
-});
-
-socket.on('serial_line', (data) => {
-    addLogLine(data.line, data.time);
-    if (data.state) {
-        state = data.state;
-        updateUI();
-    }
-});
-
-socket.on('serial_error', (data) => {
-    addLogLine(`ERROR: ${data.error}`, '', 'failure');
-});
+socket.on('serial_error', d => log('ERROR: ' + d.error, 'fail'));
 
 socket.on('disconnect', () => {
-    document.getElementById('connDot').classList.remove('online');
-    document.getElementById('connText').textContent = 'Dashboard disconnected';
+  log('WebSocket disconnected', 'fail');
+  setConnUI(false, false, '');
 });
 
-// ============================================================
-// Serial Functions
-// ============================================================
-async function refreshPorts() {
-    try {
-        const resp = await fetch('/api/ports');
-        const data = await resp.json();
-        const sel = document.getElementById('portSelect');
-        sel.innerHTML = '<option value="">Select port...</option>';
-        data.ports.forEach(p => {
-            const opt = document.createElement('option');
-            opt.value = p.device;
-            opt.textContent = `${p.device} — ${p.description}`;
-            sel.appendChild(opt);
-        });
-        if (data.auto_detect) {
-            sel.value = data.auto_detect;
-        }
-    } catch(e) {
-        console.error('Failed to list ports:', e);
-    }
+// ======================================================
+// FLASH stream dot
+// ======================================================
+function flashStream() {
+  const dot = document.getElementById('streamDot');
+  dot.classList.add('active');
+  clearTimeout(flashStream._t);
+  flashStream._t = setTimeout(() => dot.classList.remove('active'), 300);
 }
 
-async function connectSerial() {
-    const port = document.getElementById('portSelect').value;
-    try {
-        const resp = await fetch('/api/connect', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({port: port || null, baud: 115200})
-        });
-        const data = await resp.json();
-        if (data.error) {
-            addLogLine(`Connection failed: ${data.error}`, '', 'failure');
-        } else {
-            addLogLine(`Connected to ${data.port} @ ${data.baud} baud`, '', 'success');
-            document.getElementById('connDot').classList.add('online');
-            document.getElementById('connText').textContent = data.port;
-            document.getElementById('btnConnect').classList.add('hidden');
-            document.getElementById('btnDisconnect').classList.remove('hidden');
-        }
-    } catch(e) {
-        addLogLine(`Connection error: ${e}`, '', 'failure');
-    }
+// ======================================================
+// LOG
+// ======================================================
+const MAX_LOG = 600;
+
+function classifyLine(line) {
+  const u = line.toUpperCase();
+  if (u.includes('FAILURE') || u.includes('!!!') || u.includes('CRASH')) return 'fail';
+  if (u.includes('PASS') || u.includes('SUCCESS') || u.includes(' ACK') || u.includes('CONNECTED')) return 'ok';
+  if (u.includes('PHASE') || u.includes('CAMPAIGN') || u.includes('PROTOCOL CHECK')) return 'phase';
+  if (u.includes('ERROR') || u.includes('START') || u.includes('RESET') || u.includes('RECONNECT')) return 'sys';
+  return 'normal';
 }
 
-async function disconnectSerial() {
-    await fetch('/api/disconnect', {method: 'POST'});
-    document.getElementById('connDot').classList.remove('online');
-    document.getElementById('connText').textContent = 'Disconnected';
-    document.getElementById('btnConnect').classList.remove('hidden');
-    document.getElementById('btnDisconnect').classList.add('hidden');
-    addLogLine('Disconnected from ESP32', '', 'system');
+function log(line, cls, time) {
+  const box = document.getElementById('logBox');
+  const div = document.createElement('div');
+  div.className = 'log-line ' + (cls || 'normal') + ' new-flash';
+
+  const now = time || new Date().toTimeString().slice(0, 8);
+  div.innerHTML = `<span class="ts">[${now}]</span>${esc(line)}`;
+  box.appendChild(div);
+  logLineCount++;
+
+  // Trim old lines
+  while (box.children.length > MAX_LOG) box.removeChild(box.firstChild);
+
+  // Auto scroll
+  box.scrollTop = box.scrollHeight;
+
+  // Update line count badge
+  document.getElementById('logCount').textContent = logLineCount + ' lines';
+
+  // Remove flash class after anim
+  setTimeout(() => div.classList.remove('new-flash'), 600);
 }
 
-async function sendCommand() {
-    const input = document.getElementById('serialInput');
-    const cmd = input.value.trim();
-    if (!cmd) return;
-    
-    try {
-        await fetch('/api/send', {
-            method: 'POST',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({command: cmd})
-        });
-        input.value = '';
-    } catch(e) {
-        addLogLine(`Send failed: ${e}`, '', 'failure');
-    }
-}
-
-function sendQuick(cmd) {
-    document.getElementById('serialInput').value = cmd;
-    sendCommand();
-}
-
-// ============================================================
-// Log
-// ============================================================
-function addLogLine(line, time, type) {
-    const log = document.getElementById('serialLog');
-    const div = document.createElement('div');
-    div.className = 'log-line';
-    
-    if (!time) {
-        const now = new Date();
-        time = now.toTimeString().slice(0, 8);
-    }
-    
-    // Classify line
-    if (!type) {
-        const upper = line.toUpperCase();
-        if (upper.includes('FAILURE') || upper.includes('FAIL') || upper.includes('!!!'))
-            type = 'failure';
-        else if (upper.includes('PASS') || upper.includes('SUCCESS') || upper.includes('ACK'))
-            type = 'success';
-        else if (upper.includes('PHASE') || upper.includes('CAMPAIGN'))
-            type = 'phase';
-        else if (upper.includes('START') || upper.includes('CONNECT') || upper.includes('ERROR'))
-            type = 'system';
-    }
-    
-    if (type) div.className += ' ' + type;
-    div.innerHTML = `<span class="ts">[${time}]</span>${escapeHtml(line)}`;
-    log.appendChild(div);
-    
-    // Keep max 500 lines
-    while (log.children.length > 500) {
-        log.removeChild(log.firstChild);
-    }
-    
-    // Auto-scroll
-    log.scrollTop = log.scrollHeight;
+function esc(s) {
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
 function clearLog() {
-    document.getElementById('serialLog').innerHTML = '';
-    addLogLine('Log cleared', '', 'system');
+  document.getElementById('logBox').innerHTML = '';
+  logLineCount = 0;
+  document.getElementById('logCount').textContent = '0 lines';
+  log('Log cleared', 'sys');
 }
 
-function escapeHtml(s) {
-    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+// ======================================================
+// SERIAL CONNECT / DISCONNECT / SEND
+// ======================================================
+async function refreshPorts() {
+  try {
+    const r = await fetch('/api/ports');
+    const d = await r.json();
+    const sel = document.getElementById('portSelect');
+    sel.innerHTML = '<option value="">Select port…</option>';
+    d.ports.forEach(p => {
+      const o = document.createElement('option');
+      o.value = p.device;
+      o.textContent = `${p.device} — ${p.description}`;
+      sel.appendChild(o);
+    });
+    if (d.auto_detect) sel.value = d.auto_detect;
+  } catch(e) { log('Port refresh failed: '+e, 'fail'); }
 }
 
-// ============================================================
-// UI Update
-// ============================================================
-function updateUI() {
-    if (!state) return;
-    
-    // Connection
-    const dot = document.getElementById('connDot');
-    const txt = document.getElementById('connText');
-    if (state.connected) {
-        dot.classList.add('online');
-        txt.textContent = state.port || 'Connected';
-    } else if (state.reconnecting) {
-        dot.classList.remove('online');
-        txt.textContent = 'Reconnecting (plug USB back)...';
-    } else {
-        dot.classList.remove('online');
-        txt.textContent = 'Disconnected';
+async function connectSerial() {
+  const port = document.getElementById('portSelect').value;
+  const btn = document.getElementById('btnConnect');
+  btn.disabled = true; btn.textContent = 'Connecting…';
+  try {
+    const r = await fetch('/api/connect', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ port: port || null, baud: 115200 })
+    });
+    const d = await r.json();
+    if (d.error) {
+      log('Connection failed: ' + d.error, 'fail');
+      btn.disabled = false; btn.textContent = 'Connect';
+      return false;
     }
-    
-    // Campaign info
-    setText('stateVal', state.state || 'IDLE');
-    setStateColor('stateVal', state.state);
-    setText('protocolVal', state.protocol || '—');
-    setText('profileVal', state.profile || '—');
-    setText('phaseVal', state.phase || 'IDLE');
-    setText('mutationVal', state.mutation || 'NONE');
-    
-    // Heartbeat — show WAITING until a campaign gives real evidence
-    const hbInd = document.getElementById('hbIndicator');
-    const hbDot = document.getElementById('hbDot');
-    const hbText = document.getElementById('hbText');
-    const running = (state.state === 'RUNNING' || state.state === 'REPLAY');
-    if (state.heartbeat_ok) {
-        hbInd.className = 'hb-indicator alive';
-        hbDot.className = 'hb-dot alive';
-        hbText.textContent = 'HEARTBEAT OK';
-    } else if (running || state.heartbeat_ok === false && state.state === 'FAILURE') {
-        hbInd.className = 'hb-indicator dead';
-        hbDot.className = 'hb-dot';
-        hbText.textContent = 'HEARTBEAT LOST';
-    } else {
-        hbInd.className = 'hb-indicator waiting';
-        hbDot.className = 'hb-dot';
-        hbText.textContent = 'WAITING';
+    log(`Connected to ${d.port} @ ${d.baud} baud`, 'ok');
+    S.connected = true; S.port = d.port;
+    setConnUI(true, false, d.port);
+    btn.disabled = false; btn.textContent = 'Connect';
+    return true;
+  } catch(e) {
+    log('Connect error: ' + e, 'fail');
+    btn.disabled = false; btn.textContent = 'Connect';
+    return false;
+  }
+}
+
+async function disconnectSerial() {
+  await fetch('/api/disconnect', { method:'POST' });
+  setConnUI(false, false, '');
+  log('Disconnected from ESP32', 'sys');
+}
+
+function setConnUI(online, reconnecting, port) {
+  const dot  = document.getElementById('connDot');
+  const txt  = document.getElementById('connText');
+  const pill = document.getElementById('connPill');
+  const bC   = document.getElementById('btnConnect');
+  const bD   = document.getElementById('btnDisconnect');
+
+  if (online) {
+    dot.classList.add('online');
+    pill.classList.add('online');
+    txt.textContent = port || 'Connected';
+    bC.classList.add('hidden');
+    bD.classList.remove('hidden');
+    // ensure port is in dropdown
+    const sel = document.getElementById('portSelect');
+    if (port && !Array.from(sel.options).some(o => o.value === port)) {
+      const o = document.createElement('option');
+      o.value = port; o.textContent = port + ' — ESP32';
+      sel.appendChild(o);
     }
-    
-    // Progress
-    const pct = state.duration_s > 0 
-        ? Math.min(100, (state.elapsed_s / state.duration_s) * 100) 
-        : 0;
-    document.getElementById('progressFill').style.width = pct + '%';
-    setText('timeVal', `${state.elapsed_s}/${state.duration_s}s`);
-    setText('packetsVal', state.packets);
-    
-    // Counters
-    setText('totalPackets', state.packets);
-    setText('totalAcks', state.acks);
-    setText('totalNacks', state.nacks);
-    setText('totalFailures', state.failures);
-    const mutCount = Object.keys(state.mutations_used || {}).length;
-    setText('totalMutations', mutCount);
-    
-    // Gauges
-    updateGauge('ackGauge', 'ackCount', state.acks, state.test_num || 1, 'var(--green)');
-    updateGauge('nackGauge', 'nackCount', state.nacks, state.test_num || 1, 'var(--yellow)');
-    updateGauge('errGauge', 'errCount', state.errors, state.test_num || 1, 'var(--red)');
-    
-    // Verdict
-    const vb = document.getElementById('verdictBanner');
-    const sv = document.getElementById('scoreVal');
-    if (state.verdict && state.verdict !== 'N/A' && state.verdict !== 'UNKNOWN') {
-        vb.textContent = state.verdict;
-        vb.className = 'verdict-banner ' + state.verdict.toLowerCase();
-    } else if (state.state === 'RUNNING') {
-        vb.textContent = 'FUZZING';
-        vb.className = 'verdict-banner testing';
-    } else if (state.state === 'FAILURE') {
-        vb.textContent = 'FAILURE DETECTED';
-        vb.className = 'verdict-banner fail';
-    } else if (state.state === 'PROTOCOL_CHECK') {
-        vb.textContent = 'PROTOCOL CHECK — WAITING FOR DUT';
-        vb.className = 'verdict-banner testing';
-    } else if (state.reconnecting) {
-        vb.textContent = 'RECONNECTING';
-        vb.className = 'verdict-banner testing';
-    } else {
-        vb.textContent = 'WAITING';
-        vb.className = 'verdict-banner testing';
-    }
-    setText('scoreVal', state.robustness_score > 0 ? `${state.robustness_score}/100` : '—/100');
-    
-    // Mutation bars
-    updateMutationBars(state.mutations_used || {});
-    
-    // Timeline
-    updateTimeline(state.timeline || []);
-    
-    // Chart
-    updateChart();
+    if (port) sel.value = port;
+  } else if (reconnecting) {
+    dot.classList.remove('online');
+    pill.classList.remove('online');
+    txt.textContent = 'Reconnecting…';
+    bC.classList.remove('hidden');
+    bD.classList.add('hidden');
+  } else {
+    dot.classList.remove('online');
+    pill.classList.remove('online');
+    txt.textContent = 'Disconnected';
+    bC.classList.remove('hidden');
+    bD.classList.add('hidden');
+  }
 }
 
-function setText(id, val) {
-    const el = document.getElementById(id);
-    if (el) el.textContent = val;
+async function sendCmd() {
+  const input = document.getElementById('cmdInput');
+  const cmd = input.value.trim();
+  if (!cmd) return;
+
+  if (!S.connected) {
+    log('Not connected — auto-connecting…', 'sys');
+    const ok = await connectSerial();
+    if (!ok) return;
+    await new Promise(r => setTimeout(r, 600));
+  }
+
+  try {
+    const r = await fetch('/api/send', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ command: cmd })
+    });
+    const d = await r.json();
+    if (d.error) { log('Send failed: ' + d.error, 'fail'); }
+    else { log('> ' + cmd, 'sys'); input.value = ''; }
+  } catch(e) { log('Send error: ' + e, 'fail'); }
 }
 
-function setStateColor(id, s) {
-    const el = document.getElementById(id);
-    if (!el) return;
-    el.className = 'status-value';
-    if (s === 'RUNNING') el.classList.add('ok');
-    else if (s === 'FAILURE') el.classList.add('fail');
-    else if (s === 'COMPLETE') el.classList.add('ok');
-    else if (s === 'PAUSED') el.classList.add('warn');
-    else if (s === 'PROTOCOL_CHECK') el.classList.add('warn');
+function quick(cmd) {
+  document.getElementById('cmdInput').value = cmd;
+  sendCmd();
 }
 
-// ============================================================
-// Gauge
-// ============================================================
-function updateGauge(gaugeId, countId, value, max, color) {
-    const gauge = document.getElementById(gaugeId);
-    const count = document.getElementById(countId);
-    if (!gauge || !count) return;
-    
-    const pct = max > 0 ? Math.min(1, value / max) : 0;
-    const circumference = 2 * Math.PI * 40; // r=40
-    const offset = circumference * (1 - pct);
-    gauge.style.strokeDashoffset = offset;
-    count.textContent = value;
+// ======================================================
+// RENDER UI from state S
+// ======================================================
+function render() {
+  if (!S) return;
+
+  // Connection
+  setConnUI(S.connected, S.reconnecting, S.port);
+
+  // Port label
+  setText('portVal', S.port || '—');
+
+  // Campaign
+  setText('stateVal', S.state || 'IDLE');
+  colorState('stateVal', S.state);
+  setText('protoVal', S.protocol || '—');
+  setText('profVal', S.profile || '—');
+  setText('phaseVal', S.phase || 'IDLE');
+  setText('mutVal', S.mutation || 'NONE');
+
+  // Heartbeat
+  const hb = document.getElementById('hbCard');
+  const hbDot = document.getElementById('hbDotBig');
+  const hbTxt = document.getElementById('hbText');
+  if (S.heartbeat_ok) {
+    hb.className = 'hb-card alive';
+    hbDot.className = 'hb-dot-big alive';
+    hbTxt.textContent = 'HEARTBEAT OK';
+  } else if (S.state === 'FAILURE') {
+    hb.className = 'hb-card dead';
+    hbDot.className = 'hb-dot-big';
+    hbTxt.textContent = 'HEARTBEAT LOST';
+  } else {
+    hb.className = 'hb-card waiting';
+    hbDot.className = 'hb-dot-big';
+    hbTxt.textContent = S.connected ? 'WAITING FOR DUT' : 'NOT CONNECTED';
+  }
+
+  // Counters — bump animation on change
+  bump('ctrPackets', S.packets || 0);
+  bump('ctrAcks', S.acks || 0);
+  bump('ctrNacks', S.nacks || 0);
+  bump('ctrFails', S.failures || 0);
+  const mutTypes = Object.keys(S.mutations_used || {}).length;
+  bump('ctrMuts', mutTypes);
+
+  // Rates
+  const total = Math.max(S.packets || 1, 1);
+  setText('rateAcks',  total > 0 ? Math.round((S.acks||0)/total*100)+'%' : '—');
+  setText('rateNacks', total > 0 ? Math.round((S.nacks||0)/total*100)+'%' : '—');
+  setText('rateFails', S.failures > 0 ? '⚠ ' + S.failures : '✓');
+  setText('rateMuts',  mutTypes + ' types');
+
+  // PPS
+  const now = Date.now();
+  const dt = (now - lastPacketTime) / 1000;
+  const dpkt = (S.packets || 0) - lastPackets;
+  if (dt > 0 && dpkt >= 0) {
+    const rawPPS = dpkt / dt;
+    ppsSmooth = ppsSmooth * 0.7 + rawPPS * 0.3;
+    setText('ppsVal', ppsSmooth.toFixed(1));
+    lastPackets = S.packets || 0;
+    lastPacketTime = now;
+  }
+
+  // Progress
+  const pct = S.duration_s > 0 ? Math.min(100, (S.elapsed_s / S.duration_s) * 100) : 0;
+  document.getElementById('progFill').style.width = pct + '%';
+  setText('timeVal', `${S.elapsed_s || 0} / ${S.duration_s || 0} s`);
+  setText('elapsedLive', `Elapsed: ${S.elapsed_s || 0}s`);
+  const score = S.robustness_score > 0 ? S.robustness_score + '/100' : '—';
+  setText('scoreVal', score);
+
+  // Gauges
+  const p = S.packets || 0;
+  const ackPct  = p > 0 ? (S.acks||0)/p   : 0;
+  const nackPct = p > 0 ? (S.nacks||0)/p  : 0;
+  const scorePct = (S.robustness_score||0) / 100;
+  setGauge('gAck',   ackPct,  'gAckPct',  Math.round(ackPct*100)+'%');
+  setGauge('gNack',  nackPct, 'gNackPct', Math.round(nackPct*100)+'%');
+  setGauge('gScore', scorePct,'gScoreVal', S.robustness_score > 0 ? S.robustness_score : '—');
+
+  // Verdict
+  renderVerdict(S);
+
+  // Mutation bars
+  renderMutBars(S.mutations_used || {});
+
+  // Timeline
+  renderTimeline(S.timeline || []);
+
+  // LIVE badge only when running
+  const lb = document.getElementById('liveBadge');
+  lb.classList.toggle('active', S.state === 'RUNNING' || S.state === 'PROTOCOL_CHECK');
 }
 
-// ============================================================
-// Mutation Bars
-// ============================================================
-function updateMutationBars(mutations) {
-    const container = document.getElementById('mutationBars');
-    const names = Object.keys(mutations);
-    
-    if (names.length === 0) {
-        container.innerHTML = '<div style="color:var(--text-dim); font-size:11px; width:100%; text-align:center; padding:20px;">No mutations yet — start a test</div>';
-        return;
-    }
-    
-    const maxVal = Math.max(...Object.values(mutations), 1);
-    const colors = ['#00d4ff', '#22c55e', '#eab308', '#ef4444', '#a78bfa', '#ec4899', '#f97316', '#06b6d4', '#84cc16', '#f43f5e'];
-    
-    container.innerHTML = names.map((name, i) => {
-        const val = mutations[name];
-        const h = Math.max(2, (val / maxVal) * 80);
-        const color = colors[i % colors.length];
-        return `
-            <div class="mutation-bar">
-                <div class="mutation-bar-count">${val}</div>
-                <div class="mutation-bar-fill" style="height:${h}px; background:${color}"></div>
-                <div class="mutation-bar-label">${name}</div>
-            </div>
-        `;
-    }).join('');
+function setText(id, v) {
+  const el = document.getElementById(id);
+  if (el && el.textContent !== String(v)) el.textContent = v;
 }
 
-// ============================================================
-// Timeline
-// ============================================================
-function updateTimeline(events) {
-    const container = document.getElementById('timelineEvents');
-    if (!events || events.length === 0) return;
-    
-    const dotClass = {
-        'CAMPAIGN_START': 'start',
-        'PHASE': 'phase',
-        'FAILURE': 'failure',
-        'CAMPAIGN_COMPLETE': 'complete',
-        'VERDICT': 'verdict',
-        'REPLAY': 'replay',
-    };
-    
-    const labels = {
-        'CAMPAIGN_START': 'Campaign started',
-        'PHASE': 'Phase change',
-        'FAILURE': 'Failure detected',
-        'CAMPAIGN_COMPLETE': 'Campaign complete',
-        'VERDICT': 'Verdict',
-        'REPLAY': 'Replay attempt',
-    };
-    
-    container.innerHTML = events.slice(-20).reverse().map(ev => {
-        const cls = dotClass[ev.event] || 'phase';
-        const label = labels[ev.event] || ev.event;
-        const data = ev.data ? `: <strong>${ev.data}</strong>` : '';
-        return `
-            <div class="timeline-event">
-                <div class="timeline-dot ${cls}"></div>
-                <span class="timeline-text">${label}${data}</span>
-            </div>
-        `;
-    }).join('');
+function bump(id, newVal) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const cur = parseInt(el.textContent) || 0;
+  if (cur !== newVal) {
+    el.textContent = newVal;
+    el.classList.remove('bump');
+    void el.offsetWidth; // force reflow
+    el.classList.add('bump');
+  }
 }
 
-// ============================================================
-// Chart (simple canvas, no external deps)
-// ============================================================
+function colorState(id, s) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.className = 'stat-val';
+  const map = { RUNNING:'ok', COMPLETE:'ok', FAILURE:'fail', PAUSED:'warn', PROTOCOL_CHECK:'warn' };
+  if (map[s]) el.classList.add(map[s]);
+}
+
+// ======================================================
+// GAUGE
+// ======================================================
+function setGauge(ringId, frac, labelId, labelTxt) {
+  const ring = document.getElementById(ringId);
+  const lbl  = document.getElementById(labelId);
+  if (!ring || !lbl) return;
+  const C = 2 * Math.PI * 40;  // circumference
+  ring.style.strokeDashoffset = C * (1 - Math.max(0, Math.min(1, frac)));
+  lbl.textContent = labelTxt;
+}
+
+// ======================================================
+// VERDICT
+// ======================================================
+function renderVerdict(s) {
+  const el = document.getElementById('verdictEl');
+  if (s.verdict && s.verdict !== 'N/A' && s.verdict !== 'UNKNOWN') {
+    el.textContent = s.verdict;
+    el.className = 'verdict ' + s.verdict.toLowerCase();
+  } else if (s.state === 'RUNNING') {
+    el.textContent = 'FUZZING…';
+    el.className = 'verdict running';
+  } else if (s.state === 'FAILURE') {
+    el.textContent = '⚠ FAILURE';
+    el.className = 'verdict fail';
+  } else if (s.state === 'COMPLETE') {
+    el.textContent = 'COMPLETE';
+    el.className = 'verdict complete';
+  } else if (s.state === 'PROTOCOL_CHECK') {
+    el.textContent = 'PROTOCOL CHECK';
+    el.className = 'verdict running';
+  } else if (s.reconnecting) {
+    el.textContent = 'RECONNECTING';
+    el.className = 'verdict running';
+  } else {
+    el.textContent = 'WAITING';
+    el.className = 'verdict waiting';
+  }
+}
+
+// ======================================================
+// MUTATION BARS
+// ======================================================
+const MUT_COLORS = ['#00d4ff','#22c55e','#eab308','#ef4444','#a78bfa','#f97316','#ec4899','#06b6d4','#84cc16'];
+
+function renderMutBars(muts) {
+  const names = Object.keys(muts);
+  const container = document.getElementById('mutBars');
+  if (!names.length) {
+    container.innerHTML = '<div style="color:var(--text-dim);font-size:11px;width:100%;text-align:center;padding:16px 0">No mutations yet — start a test</div>';
+    return;
+  }
+  const maxV = Math.max(...Object.values(muts), 1);
+  container.innerHTML = names.map((n, i) => {
+    const v = muts[n];
+    const h = Math.max(3, (v / maxV) * 80);
+    const c = MUT_COLORS[i % MUT_COLORS.length];
+    return `<div class="mut-bar">
+      <span class="mut-count">${v}</span>
+      <div class="mut-fill" style="height:${h}px;background:${c}"></div>
+      <span class="mut-name">${n}</span>
+    </div>`;
+  }).join('');
+}
+
+// ======================================================
+// TIMELINE
+// ======================================================
+const TL_DOT = {
+  CAMPAIGN_START: 'tl-start', PHASE: 'tl-phase', FAILURE: 'tl-failure',
+  CAMPAIGN_COMPLETE: 'tl-complete', VERDICT: 'tl-verdict', REPLAY: 'tl-replay',
+};
+const TL_LBL = {
+  CAMPAIGN_START: 'Campaign started', PHASE: 'Phase',
+  FAILURE: 'Failure', CAMPAIGN_COMPLETE: 'Complete',
+  VERDICT: 'Verdict', REPLAY: 'Replay',
+};
+
+function renderTimeline(events) {
+  if (!events.length) return;
+  const c = document.getElementById('timeline');
+  c.innerHTML = events.slice(-25).reverse().map(ev => {
+    const cls  = TL_DOT[ev.event] || 'tl-phase';
+    const lbl  = TL_LBL[ev.event] || ev.event;
+    const data = ev.data ? `: <strong>${ev.data}</strong>` : '';
+    return `<div class="tl-item"><div class="tl-dot ${cls}"></div><span class="tl-text">${lbl}${data}</span></div>`;
+  }).join('');
+}
+
+// ======================================================
+// CHART
+// ======================================================
 function initChart() {
-    const canvas = document.getElementById('timelineChart');
-    chartCtx = canvas.getContext('2d');
-    resizeCanvas();
-    window.addEventListener('resize', resizeCanvas);
-}
-
-function resizeCanvas() {
-    const canvas = document.getElementById('timelineChart');
-    if (!canvas) return;
-    const container = canvas.parentElement;
-    canvas.width = container.clientWidth;
-    canvas.height = container.clientHeight;
+  const cv = document.getElementById('chart');
+  const wrap = cv.parentElement;
+  cv.width  = wrap.clientWidth;
+  cv.height = wrap.clientHeight;
+  chartCtx = cv.getContext('2d');
+  window.addEventListener('resize', () => {
+    cv.width  = wrap.clientWidth;
+    cv.height = wrap.clientHeight;
     drawChart();
+  });
 }
 
-function updateChart() {
-    // Called by updateUI and by the 2s auto-poll; samples once per second
-    const now = Date.now();
-    if (chartData.length === 0 || now - (chartData[chartData.length-1]?.t || 0) > 1000) {
-        chartData.push({
-            t: now,
-            packets: state.packets || 0,
-            acks: state.acks || 0,
-            nacks: state.nacks || 0,
-            failures: state.failures || 0,
-        });
-        
-        if (chartData.length > maxChartPoints) {
-            chartData.shift();
-        }
-        
-        drawChart();
-    }
+function feedChart() {
+  const now = Date.now();
+  if (!chartData.length || now - chartData[chartData.length-1].t > 800) {
+    chartData.push({
+      t: now,
+      packets:  S.packets  || 0,
+      acks:     S.acks     || 0,
+      nacks:    S.nacks    || 0,
+      failures: S.failures || 0,
+    });
+    if (chartData.length > 80) chartData.shift();
+    drawChart();
+  }
 }
-
-// Auto-refresh state every 2s so counters stay live even without serial traffic
-setInterval(async () => {
-    try {
-        const resp = await fetch('/api/status');
-        const st = await resp.json();
-        state = st;
-        updateUI();
-        updateChart();
-    } catch (e) { /* server busy */ }
-}, 2000);
 
 function drawChart() {
-    if (!chartCtx || chartData.length < 2) return;
-    
-    const canvas = chartCtx.canvas;
-    const W = canvas.width;
-    const H = canvas.height;
-    const pad = {top: 10, right: 10, bottom: 20, left: 50};
-    const plotW = W - pad.left - pad.right;
-    const plotH = H - pad.top - pad.bottom;
-    
-    chartCtx.clearRect(0, 0, W, H);
-    
-    // Find ranges
-    const maxPackets = Math.max(...chartData.map(d => d.packets), 10);
-    const minX = chartData[0].t;
-    const maxX = chartData[chartData.length-1].t;
-    const rangeX = Math.max(maxX - minX, 1000);
-    
-    // Grid lines
-    chartCtx.strokeStyle = '#1e2d44';
-    chartCtx.lineWidth = 0.5;
-    for (let i = 0; i <= 4; i++) {
-        const y = pad.top + (plotH * i / 4);
-        chartCtx.beginPath();
-        chartCtx.moveTo(pad.left, y);
-        chartCtx.lineTo(W - pad.right, y);
-        chartCtx.stroke();
-        
-        // Label
-        chartCtx.fillStyle = '#475569';
-        chartCtx.font = '10px monospace';
-        chartCtx.textAlign = 'right';
-        const val = Math.round(maxPackets * (1 - i/4));
-        chartCtx.fillText(val.toString(), pad.left - 5, y + 3);
-    }
-    
-    // Draw lines
-    function drawLine(key, color) {
-        chartCtx.strokeStyle = color;
-        chartCtx.lineWidth = 2;
-        chartCtx.beginPath();
-        chartData.forEach((d, i) => {
-            const x = pad.left + ((d.t - minX) / rangeX) * plotW;
-            const y = pad.top + plotH - (d[key] / maxPackets) * plotH;
-            if (i === 0) chartCtx.moveTo(x, y);
-            else chartCtx.lineTo(x, y);
-        });
-        chartCtx.stroke();
-    }
-    
-    drawLine('packets', '#00d4ff');
-    drawLine('acks', '#22c55e');
-    drawLine('nacks', '#eab308');
-    drawLine('failures', '#ef4444');
-    
-    // Legend
-    const legends = [
-        {label: 'Packets', color: '#00d4ff'},
-        {label: 'ACKs', color: '#22c55e'},
-        {label: 'NACKs', color: '#eab308'},
-        {label: 'Failures', color: '#ef4444'},
-    ];
-    let lx = pad.left + 5;
-    legends.forEach(l => {
-        chartCtx.fillStyle = l.color;
-        chartCtx.fillRect(lx, H - 12, 8, 3);
-        chartCtx.fillStyle = '#64748b';
-        chartCtx.font = '9px monospace';
-        chartCtx.textAlign = 'left';
-        chartCtx.fillText(l.label, lx + 11, H - 8);
-        lx += chartCtx.measureText(l.label).width + 20;
+  if (!chartCtx || chartData.length < 2) return;
+  const cv = chartCtx.canvas;
+  const W = cv.width, H = cv.height;
+  const pad = { t:10, r:10, b:22, l:44 };
+  const pw = W - pad.l - pad.r, ph = H - pad.t - pad.b;
+  chartCtx.clearRect(0, 0, W, H);
+
+  const maxP = Math.max(...chartData.map(d => d.packets), 10);
+  const minX = chartData[0].t, maxX = chartData[chartData.length-1].t;
+  const ranX = Math.max(maxX - minX, 1000);
+
+  // Grid
+  chartCtx.strokeStyle = '#1a2a45'; chartCtx.lineWidth = 0.5;
+  for (let i = 0; i <= 4; i++) {
+    const y = pad.t + ph * i / 4;
+    chartCtx.beginPath(); chartCtx.moveTo(pad.l, y); chartCtx.lineTo(W-pad.r, y); chartCtx.stroke();
+    chartCtx.fillStyle = '#334155'; chartCtx.font = '9px monospace'; chartCtx.textAlign = 'right';
+    chartCtx.fillText(Math.round(maxP*(1-i/4)), pad.l-3, y+3);
+  }
+
+  // Lines
+  const lines = [
+    { key:'packets',  color:'#00d4ff', label:'Pkt' },
+    { key:'acks',     color:'#22c55e', label:'ACK' },
+    { key:'nacks',    color:'#eab308', label:'NACK'},
+    { key:'failures', color:'#ef4444', label:'Fail'},
+  ];
+  lines.forEach(({ key, color }) => {
+    chartCtx.strokeStyle = color; chartCtx.lineWidth = 1.8;
+    chartCtx.shadowColor = color; chartCtx.shadowBlur = 4;
+    chartCtx.beginPath();
+    chartData.forEach((d, i) => {
+      const x = pad.l + ((d.t - minX) / ranX) * pw;
+      const y = pad.t + ph - (d[key] / maxP) * ph;
+      i === 0 ? chartCtx.moveTo(x, y) : chartCtx.lineTo(x, y);
     });
+    chartCtx.stroke();
+    chartCtx.shadowBlur = 0;
+  });
+
+  // Legend
+  let lx = pad.l + 4;
+  lines.forEach(({ color, label }) => {
+    chartCtx.fillStyle = color;
+    chartCtx.fillRect(lx, H-14, 10, 3);
+    chartCtx.fillStyle = '#64748b'; chartCtx.font = '9px monospace'; chartCtx.textAlign = 'left';
+    chartCtx.fillText(label, lx+13, H-9);
+    lx += chartCtx.measureText(label).width + 24;
+  });
+
+  document.getElementById('chartInfo').textContent = `${chartData.length} pts · max=${maxP}`;
 }
 
-// ============================================================
-// Init
-// ============================================================
-window.addEventListener('load', () => {
-    refreshPorts();
-    initChart();
+// ======================================================
+// POLLING — every 1 second (lightweight, supplements SocketIO)
+// ======================================================
+setInterval(async () => {
+  try {
+    const r = await fetch('/api/status');
+    S = await r.json();
+    render();
+    feedChart();
+  } catch(e) { /* server busy */ }
+}, 1000);
+
+// Live elapsed timer (ticks every second independently of serial)
+setInterval(() => {
+  if (S.state === 'RUNNING' && S.elapsed_s !== undefined) {
+    S.elapsed_s = (S.elapsed_s || 0) + 1;
+    setText('timeVal', `${S.elapsed_s} / ${S.duration_s || 0} s`);
+    setText('elapsedLive', `Elapsed: ${S.elapsed_s}s`);
+    const pct = S.duration_s > 0 ? Math.min(100,(S.elapsed_s/S.duration_s)*100) : 0;
+    document.getElementById('progFill').style.width = pct + '%';
+  }
+}, 1000);
+
+// ======================================================
+// INIT
+// ======================================================
+window.addEventListener('load', async () => {
+  initChart();
+  await refreshPorts();
+
+  // Pull status from server — may already be connected
+  try {
+    const r = await fetch('/api/status');
+    S = await r.json();
+    render();
+    feedChart();
+
+    if (S.connected) {
+      log(`Already connected to ${S.port} @ ${S.baud} baud`, 'ok');
+      // Replay recent log from server
+      if (S.log_tail && S.log_tail.length) {
+        S.log_tail.forEach(l => {
+          const m = l.match(/^\[(\d{2}:\d{2}:\d{2})\]\s+(.*)/);
+          if (m) log(m[2], classifyLine(m[2]), m[1]);
+          else   log(l, 'normal');
+        });
+      }
+    } else {
+      // Auto-connect if a port is detected
+      const sel = document.getElementById('portSelect');
+      if (sel && sel.value) {
+        log('Auto-connecting to detected port…', 'sys');
+        await connectSerial();
+      } else {
+        log('No ESP32 detected. Click ↻ Ports then Connect.', 'sys');
+      }
+    }
+  } catch(e) {
+    log('Dashboard ready — server not reachable yet.', 'fail');
+  }
 });
-
-window.addEventListener('resize', resizeCanvas);
 </script>
-
 </body>
 </html>
