@@ -1,0 +1,26 @@
+==================================================
+AUTOFUZZER TEST REPORT — TEST_003
+==================================================
+Date:          2026-11-02 09:29:00
+Target:        SPI Reference DUT (illustrative)
+Protocol:      SPI MODE 0 @ 10 MHz
+Profile:       DEEP 5min
+Duration:      299725 ms
+
+TRANSACTIONS
+  Sent: 344  Valid Responses: 341  Invalid Responses: 3
+  No Response: 0  Failures: 0
+
+ROBUSTNESS SCORE: 86/100
+VERDICT: PASS (SIMULATED SCENARIO)
+
+SCORE BREAKDOWN
+  Communication             PASS
+  Boundary Handling         PASS
+  Malformed Input           PASS
+  Response Validation      PASS
+  Recovery                  PASS
+  Random Input              PASS
+
+SEED: 83301 | CAMPAIGN SEED: 353407
+==================================================

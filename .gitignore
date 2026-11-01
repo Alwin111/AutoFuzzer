@@ -23,3 +23,7 @@ firmware/nano/build/
 reports/**/packet.bin
 tests/__pycache__/
 tools/**/__pycache__/
+
+# Python cache (unchecked in, auto-generated)
+**/__pycache__/
+*.pyc

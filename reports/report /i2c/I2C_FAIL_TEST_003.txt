@@ -1,0 +1,25 @@
+==================================================
+AUTOFUZZER TEST REPORT — TEST_003 (SIMULATED)
+==================================================
+Date:          2026-11-01 14:29:00
+Target:        Arduino Nano
+Protocol:      I2C @ 100 kHz
+Profile:       DEEP 5min
+Duration:      298560 ms
+
+TRANSACTIONS
+  Sent: 305  ACKs: 201  NACKs: 82  Failures: 22
+
+ROBUSTNESS SCORE: 67/100
+VERDICT: FAIL
+
+SCORE BREAKDOWN
+  Communication             PASS
+  Boundary Handling         PASS
+  Malformed Input           FAIL
+  Recovery                  PASS
+  Heartbeat                 FAIL
+  Random Input              PASS
+
+SEED: 48462 | CAMPAIGN SEED: 359469
+==================================================

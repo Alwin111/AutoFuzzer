@@ -73,7 +73,11 @@ campaign:
     duration_seconds: 30
 
 control:
+  session_id: hw_20261030_001
+  expected_successes: 23
+  expected_failures: 8
   seed: 20261030
+  protocol: i2c
   response_timeout_seconds: 0.500
   heartbeat_timeout_seconds: 0.350
   grace_period_seconds: 2.0      # wait for a heartbeat before starting the campaign
@@ -85,5 +89,6 @@ control:
 
 logging:
   output_dir: "runs/20261030_001"
+  verification_status: PASS
   log_response_lines: true
   log_every_n_packets: 1
